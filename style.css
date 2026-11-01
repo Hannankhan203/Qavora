@@ -140,6 +140,17 @@ button {
   background: none;
 }
 
+/* Accessible Keyboard Focus Navigation */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 /* App Container Layout */
 .app-container {
   display: flex;

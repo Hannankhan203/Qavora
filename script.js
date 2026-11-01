@@ -151,7 +151,16 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEYS.PROJECTS);
         if (!raw) return [];
-        const parsed = JSON.parse(raw);
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (jsonErr) {
+          console.error('TestPilot: JSON parse error in localStorage projects', jsonErr);
+          if (typeof showToast === 'function') {
+            showToast('Warning: Unable to parse local project records. Stored data preserved.', 'error');
+          }
+          return [];
+        }
         if (!Array.isArray(parsed)) return [];
 
         return parsed.map((p, pIdx) => {
@@ -325,6 +334,13 @@
         return true;
       } catch (err) {
         console.error('TestPilot: Failed to persist projects to localStorage', err);
+        if (typeof showToast === 'function') {
+          if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014 || err.number === -2147024882)) {
+            showToast('Storage Quota Exceeded: Browser storage is full. Please export a backup and delete archived records.', 'error');
+          } else {
+            showToast('Storage write failed: Unable to save changes to browser storage.', 'error');
+          }
+        }
         return false;
       }
     },
@@ -894,7 +910,81 @@
     // Reports Activity Feed
     repActivityCounter: document.getElementById('rep-activity-counter'),
     repActivityTableContainer: document.getElementById('rep-activity-table-container'),
-    repJumpExecBtn: document.getElementById('rep-jump-exec-btn')
+    repJumpExecBtn: document.getElementById('rep-jump-exec-btn'),
+
+    // Data Management & Backups (Prompt 6)
+    dataStatProjects: document.getElementById('data-stat-projects'),
+    dataStatPlans: document.getElementById('data-stat-plans'),
+    dataStatSuites: document.getElementById('data-stat-suites'),
+    dataStatCases: document.getElementById('data-stat-cases'),
+    dataStatExecs: document.getElementById('data-stat-execs'),
+    dataStatDefects: document.getElementById('data-stat-defects'),
+    dataStatStorageSize: document.getElementById('data-stat-storage-size'),
+    dataStatStoragePercent: document.getElementById('data-stat-storage-percent'),
+    dataStatStorageBar: document.getElementById('data-stat-storage-bar'),
+
+    // Data Tabs
+    dataTabBtns: document.querySelectorAll('.data-tab-btn'),
+    dataTabPanels: document.querySelectorAll('.data-tab-panel'),
+
+    // Export Card Controls
+    exportProjectSelect: document.getElementById('export-project-select'),
+    btnExportProjectJson: document.getElementById('btn-export-project-json'),
+    printProjectSelect: document.getElementById('print-project-select'),
+    printReportTypeSelect: document.getElementById('print-report-type-select'),
+    btnPrintQaReport: document.getElementById('btn-print-qa-report'),
+    exportCsvScopeSelect: document.getElementById('export-csv-scope-select'),
+    btnExportCasesCsv: document.getElementById('btn-export-cases-csv'),
+    btnExportExecsCsv: document.getElementById('btn-export-execs-csv'),
+    btnExportDefectsCsv: document.getElementById('btn-export-defects-csv'),
+
+    // Import Card Controls
+    importDropzone: document.getElementById('import-dropzone'),
+    importFileInput: document.getElementById('import-file-input'),
+    btnBrowseFile: document.getElementById('btn-browse-file'),
+    importValidationAlert: document.getElementById('import-validation-alert'),
+    importValidationText: document.getElementById('import-validation-text'),
+
+    // Backup & Rollback Card Controls
+    btnCreateFullBackup: document.getElementById('btn-create-full-backup'),
+    rollbackStatusBadge: document.getElementById('rollback-status-badge'),
+    rollbackSnapshotTitle: document.getElementById('rollback-snapshot-title'),
+    rollbackSnapshotMeta: document.getElementById('rollback-snapshot-meta'),
+    btnExecuteRollback: document.getElementById('btn-execute-rollback'),
+    btnTriggerResetModal: document.getElementById('btn-trigger-reset-modal'),
+    settingsJumpDataBtn: document.getElementById('settings-jump-data-btn'),
+
+    // Import Preview Modal
+    importPreviewModal: document.getElementById('import-preview-modal'),
+    importPreviewClose: document.getElementById('import-preview-close'),
+    importPreviewFilename: document.getElementById('import-preview-filename'),
+    importPreviewFilesize: document.getElementById('import-preview-filesize'),
+    importPreviewFormat: document.getElementById('import-preview-format'),
+    importPreviewDate: document.getElementById('import-preview-date'),
+    importPreviewProjectsCnt: document.getElementById('import-preview-projects-cnt'),
+    importPreviewPlansCnt: document.getElementById('import-preview-plans-cnt'),
+    importPreviewSuitesCnt: document.getElementById('import-preview-suites-cnt'),
+    importPreviewCasesCnt: document.getElementById('import-preview-cases-cnt'),
+    importPreviewExecsCnt: document.getElementById('import-preview-execs-cnt'),
+    importPreviewDefectsCnt: document.getElementById('import-preview-defects-cnt'),
+    importPreviewProjectsList: document.getElementById('import-preview-projects-list'),
+    importModeMerge: document.getElementById('import-mode-merge'),
+    importModeReplace: document.getElementById('import-mode-replace'),
+    importReplaceWarning: document.getElementById('import-replace-warning'),
+    importPreviewCancelBtn: document.getElementById('import-preview-cancel-btn'),
+    importPreviewConfirmBtn: document.getElementById('import-preview-confirm-btn'),
+    importConfirmBtnText: document.getElementById('import-confirm-btn-text'),
+
+    // Reset Confirm Modal
+    resetConfirmModal: document.getElementById('reset-confirm-modal'),
+    resetModalClose: document.getElementById('reset-modal-close'),
+    resetConfirmCheckbox: document.getElementById('reset-confirm-checkbox'),
+    resetBackupFirstBtn: document.getElementById('reset-backup-first-btn'),
+    resetModalCancel: document.getElementById('reset-modal-cancel'),
+    resetModalConfirmBtn: document.getElementById('reset-modal-confirm-btn'),
+
+    // Printable Report Container
+    printableReportContainer: document.getElementById('printable-report-container')
   };
 
   // ==========================================================================
@@ -4898,7 +4988,7 @@
         DOM.deleteWarningMsg.textContent = `Deleting this suite will permanently delete all ${casesCount} individual test cases inside it.`;
       }
     } else if (type === 'case') {
-      const proj = projects.find(p => p.id === State.activePlanProjectId);
+      const proj = projects.find(p => (p.testSuites || []).some(s => s.id === parentId)) || projects.find(p => p.id === State.activePlanProjectId);
       const suite = (proj?.testSuites || []).find(s => s.id === parentId);
       const tc = (suite?.testCases || []).find(c => c.id === targetId);
       if (!tc) return;
@@ -4957,8 +5047,19 @@
       if (project && project.testPlan?.phases) {
         const ph = project.testPlan.phases.find(x => x.id === targetId);
         project.testPlan.phases = project.testPlan.phases.filter(x => x.id !== targetId);
-        // Also remove suites belonging to this phase
+        // Identify deleted test case IDs from removed suites
+        const removedSuites = (project.testSuites || []).filter(s => s.phaseId === targetId);
+        const deletedCaseIds = new Set();
+        removedSuites.forEach(s => (s.testCases || []).forEach(c => deletedCaseIds.add(c.id)));
         project.testSuites = (project.testSuites || []).filter(s => s.phaseId !== targetId);
+        // Cleanly unlink from defects
+        if (Array.isArray(project.defects)) {
+          project.defects.forEach(df => {
+            if (deletedCaseIds.has(df.testCaseId)) {
+              df.testCaseId = '';
+            }
+          });
+        }
         project.updatedAt = new Date().toISOString();
 
         Storage.saveProjects(projects);
@@ -4969,7 +5070,16 @@
       const project = projects.find(p => p.id === parentId);
       if (project && project.testSuites) {
         const suite = project.testSuites.find(s => s.id === targetId);
+        const deletedCaseIds = new Set((suite?.testCases || []).map(c => c.id));
         project.testSuites = project.testSuites.filter(s => s.id !== targetId);
+        // Cleanly unlink from defects
+        if (Array.isArray(project.defects)) {
+          project.defects.forEach(df => {
+            if (deletedCaseIds.has(df.testCaseId)) {
+              df.testCaseId = '';
+            }
+          });
+        }
         project.updatedAt = new Date().toISOString();
 
         Storage.saveProjects(projects);
@@ -4981,13 +5091,23 @@
         }
       }
     } else if (type === 'case') {
-      const project = projects.find(p => p.id === State.activePlanProjectId);
+      const project = projects.find(p => (p.testSuites || []).some(s => s.id === parentId)) || projects.find(p => p.id === State.activePlanProjectId);
       const suite = (project?.testSuites || []).find(s => s.id === parentId);
       if (suite && suite.testCases) {
         const tc = suite.testCases.find(c => c.id === targetId);
         suite.testCases = suite.testCases.filter(c => c.id !== targetId);
         suite.updatedAt = new Date().toISOString();
-        project.updatedAt = new Date().toISOString();
+        if (project) {
+          project.updatedAt = new Date().toISOString();
+          // Cleanly unlink from defects
+          if (Array.isArray(project.defects)) {
+            project.defects.forEach(df => {
+              if (df.testCaseId === targetId) {
+                df.testCaseId = '';
+              }
+            });
+          }
+        }
 
         Storage.saveProjects(projects);
         Storage.addActivity('Deleted test case', tc ? tc.id : targetId);
@@ -5577,13 +5697,13 @@
     if (DOM.repHealthStatusBadge) {
       if (data.criticalDefects > 0) {
         DOM.repHealthStatusBadge.className = 'report-health-badge health-danger';
-        DOM.repHealthStatusBadge.textContent = 'QA Health: Critical Blockers';
+        DOM.repHealthStatusBadge.textContent = 'QA Assessment: Critical Blockers';
       } else if (data.failRate > 25 || data.completionRate < 40 || data.activeDefects >= 5) {
         DOM.repHealthStatusBadge.className = 'report-health-badge health-warning';
-        DOM.repHealthStatusBadge.textContent = 'QA Health: Attention Needed';
+        DOM.repHealthStatusBadge.textContent = 'QA Assessment: Attention Needed';
       } else {
         DOM.repHealthStatusBadge.className = 'report-health-badge health-good';
-        DOM.repHealthStatusBadge.textContent = 'QA Health: Stable & Ready';
+        DOM.repHealthStatusBadge.textContent = 'QA Assessment: Stable Progress';
       }
     }
 
@@ -6436,6 +6556,1092 @@
   }
 
   // ==========================================================================
+  // Prompt 6: Data Management, Import/Export, Backup, CSV & Printable Reports
+  // ==========================================================================
+
+  function sanitizeFilename(name) {
+    if (!name) return 'Workspace';
+    return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').substring(0, 50);
+  }
+
+  function getISODate() {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 150);
+  }
+
+  function formatCSVCell(val) {
+    if (val === null || val === undefined) return '""';
+    let str = String(val);
+    // Formula Injection Mitigation:
+    // If cell begins with =, +, -, @, \t, or \r, prefix with a single quote '
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
+    const escaped = str.replace(/"/g, '""');
+    return `"${escaped}"`;
+  }
+
+  function generateCSV(headers, rows) {
+    const BOM = '\uFEFF'; // UTF-8 Byte Order Mark for Excel/Sheets international character handling
+    const headerLine = headers.map(formatCSVCell).join(',');
+    const bodyLines = rows.map(row => row.map(formatCSVCell).join(','));
+    return BOM + [headerLine, ...bodyLines].join('\r\n');
+  }
+
+  function switchDataTab(tabName) {
+    State.activeDataTab = tabName;
+    if (DOM.dataTabBtns) {
+      DOM.dataTabBtns.forEach(btn => {
+        const t = btn.getAttribute('data-tab');
+        if (t === tabName) {
+          btn.classList.add('active');
+          btn.setAttribute('aria-selected', 'true');
+        } else {
+          btn.classList.remove('active');
+          btn.setAttribute('aria-selected', 'false');
+        }
+      });
+    }
+
+    if (DOM.dataTabPanels) {
+      DOM.dataTabPanels.forEach(panel => {
+        if (panel.id === `data-tabpanel-${tabName}`) {
+          panel.classList.add('active');
+        } else {
+          panel.classList.remove('active');
+        }
+      });
+    }
+  }
+
+  function renderDataWorkspace() {
+    const projects = Storage.getProjects();
+
+    // 1. Calculate stored data metrics
+    let totalPlans = 0;
+    let totalSuites = 0;
+    let totalCases = 0;
+    let totalExecs = 0;
+    let totalDefects = 0;
+
+    projects.forEach(p => {
+      if (p.testPlan) totalPlans++;
+      if (Array.isArray(p.testSuites)) {
+        totalSuites += p.testSuites.length;
+        p.testSuites.forEach(s => {
+          if (Array.isArray(s.testCases)) totalCases += s.testCases.length;
+        });
+      }
+      if (Array.isArray(p.executions)) totalExecs += p.executions.length;
+      totalDefects += p.totalDefects || 0;
+    });
+
+    if (DOM.dataStatProjects) DOM.dataStatProjects.textContent = projects.length.toString();
+    if (DOM.dataStatPlans) DOM.dataStatPlans.textContent = totalPlans.toString();
+    if (DOM.dataStatSuites) DOM.dataStatSuites.textContent = totalSuites.toString();
+    if (DOM.dataStatCases) DOM.dataStatCases.textContent = totalCases.toString();
+    if (DOM.dataStatExecs) DOM.dataStatExecs.textContent = totalExecs.toString();
+    if (DOM.dataStatDefects) DOM.dataStatDefects.textContent = totalDefects.toString();
+
+    // Storage footprint calculation
+    try {
+      const projRaw = localStorage.getItem(STORAGE_KEYS.PROJECTS) || '';
+      const actRaw = localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '';
+      const themeRaw = localStorage.getItem(STORAGE_KEYS.THEME) || '';
+      const totalBytes = (projRaw.length + actRaw.length + themeRaw.length) * 2; // UTF-16
+      const kb = (totalBytes / 1024).toFixed(1);
+      const quotaBytes = 5 * 1024 * 1024; // ~5 MB quota
+      const percent = Math.min(100, Math.max(0.1, (totalBytes / quotaBytes) * 100)).toFixed(2);
+
+      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = `${kb} KB`;
+      if (DOM.dataStatStoragePercent) DOM.dataStatStoragePercent.textContent = `${percent}% of ~5 MB est. quota`;
+      if (DOM.dataStatStorageBar) DOM.dataStatStorageBar.style.width = `${Math.max(1, percent)}%`;
+    } catch {
+      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = 'Calculated';
+    }
+
+    // 2. Populate Export Project Select
+    if (DOM.exportProjectSelect) {
+      const prevVal = DOM.exportProjectSelect.value;
+      if (projects.length === 0) {
+        DOM.exportProjectSelect.innerHTML = '<option value="" disabled selected>No projects available</option>';
+        if (DOM.btnExportProjectJson) DOM.btnExportProjectJson.disabled = true;
+      } else {
+        DOM.exportProjectSelect.innerHTML = projects.map(p => `
+          <option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${p.testCaseCount || 0} cases)</option>
+        `).join('');
+        if (prevVal && projects.some(p => p.id === prevVal)) {
+          DOM.exportProjectSelect.value = prevVal;
+        }
+        if (DOM.btnExportProjectJson) DOM.btnExportProjectJson.disabled = false;
+      }
+    }
+
+    // 3. Populate Print Project Select
+    if (DOM.printProjectSelect) {
+      const prevVal = DOM.printProjectSelect.value;
+      let printOpts = '<option value="ALL">All Projects (Global Summary)</option>';
+      projects.forEach(p => {
+        printOpts += `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`;
+      });
+      DOM.printProjectSelect.innerHTML = printOpts;
+      if (prevVal && (prevVal === 'ALL' || projects.some(p => p.id === prevVal))) {
+        DOM.printProjectSelect.value = prevVal;
+      }
+    }
+
+    // 4. Populate CSV Scope Select
+    if (DOM.exportCsvScopeSelect) {
+      const prevVal = DOM.exportCsvScopeSelect.value;
+      let csvOpts = '<option value="ALL">All Projects (All Data)</option>';
+      projects.forEach(p => {
+        csvOpts += `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`;
+      });
+      DOM.exportCsvScopeSelect.innerHTML = csvOpts;
+      if (prevVal && (prevVal === 'ALL' || projects.some(p => p.id === prevVal))) {
+        DOM.exportCsvScopeSelect.value = prevVal;
+      }
+    }
+
+    // 5. Update Rollback card status
+    const snapshot = Storage.getRollbackSnapshot();
+    if (snapshot && Array.isArray(snapshot.projects)) {
+      if (DOM.rollbackStatusBadge) {
+        DOM.rollbackStatusBadge.textContent = 'Snapshot Available';
+        DOM.rollbackStatusBadge.className = 'panel-tag badge-saas';
+      }
+      if (DOM.rollbackSnapshotTitle) {
+        DOM.rollbackSnapshotTitle.textContent = `Snapshot created ${formatRelativeTime(snapshot.timestamp)}`;
+      }
+      if (DOM.rollbackSnapshotMeta) {
+        DOM.rollbackSnapshotMeta.textContent = `${snapshot.projects.length} projects preserved before restore (${formatDisplayDate(snapshot.timestamp)})`;
+      }
+      if (DOM.btnExecuteRollback) DOM.btnExecuteRollback.disabled = false;
+    } else {
+      if (DOM.rollbackStatusBadge) {
+        DOM.rollbackStatusBadge.textContent = 'No Snapshot';
+        DOM.rollbackStatusBadge.className = 'panel-tag';
+      }
+      if (DOM.rollbackSnapshotTitle) {
+        DOM.rollbackSnapshotTitle.textContent = 'No recovery snapshot currently stored.';
+      }
+      if (DOM.rollbackSnapshotMeta) {
+        DOM.rollbackSnapshotMeta.textContent = 'Snapshots are created automatically before any replace/overwrite import.';
+      }
+      if (DOM.btnExecuteRollback) DOM.btnExecuteRollback.disabled = true;
+    }
+
+    // 6. Ensure active tab is shown
+    switchDataTab(State.activeDataTab || 'export');
+  }
+
+  function exportProjectJSON(projectId) {
+    const projects = Storage.getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      showToast('Please select a valid project to export', 'error');
+      return;
+    }
+
+    const payload = {
+      application: 'TestPilot',
+      backupVersion: 1,
+      schemaVersion: 1,
+      type: 'project',
+      exportedAt: new Date().toISOString(),
+      metadata: {
+        totalCases: project.testCaseCount || 0,
+        totalSuites: project.testSuites ? project.testSuites.length : 0,
+        totalExecutions: project.executions ? project.executions.length : 0,
+        totalDefects: project.totalDefects || 0
+      },
+      project: project
+    };
+
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const safeName = sanitizeFilename(project.name);
+    const filename = `TestPilot_${safeName}_${getISODate()}.json`;
+
+    downloadFile(jsonStr, filename, 'application/json');
+    Storage.addActivity('Exported Project JSON', project.name);
+    showToast(`Project "${project.name}" exported successfully (${(jsonStr.length / 1024).toFixed(1)} KB)`);
+  }
+
+  function exportFullApplicationBackup() {
+    const projects = Storage.getProjects();
+    const activities = Storage.getActivities();
+
+    let totalCases = 0;
+    let totalSuites = 0;
+    let totalExecs = 0;
+    let totalDefects = 0;
+    let totalPlans = 0;
+
+    projects.forEach(p => {
+      if (p.testPlan) totalPlans++;
+      if (Array.isArray(p.testSuites)) totalSuites += p.testSuites.length;
+      totalCases += p.testCaseCount || 0;
+      if (Array.isArray(p.executions)) totalExecs += p.executions.length;
+      totalDefects += p.totalDefects || 0;
+    });
+
+    const payload = {
+      application: 'TestPilot',
+      backupVersion: 1,
+      schemaVersion: 1,
+      type: 'full_backup',
+      exportedAt: new Date().toISOString(),
+      metadata: {
+        totalProjects: projects.length,
+        totalPlans: totalPlans,
+        totalSuites: totalSuites,
+        totalCases: totalCases,
+        totalExecutions: totalExecs,
+        totalDefects: totalDefects,
+        theme: Storage.getTheme()
+      },
+      projects: projects,
+      activities: activities
+    };
+
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const filename = `TestPilot_Full_Backup_${getISODate()}.json`;
+
+    downloadFile(jsonStr, filename, 'application/json');
+    Storage.addActivity('Created Full Backup', `${projects.length} Projects`);
+    showToast(`Complete application backup downloaded (${projects.length} projects)`);
+  }
+
+  function exportTestCasesCSV() {
+    const scope = DOM.exportCsvScopeSelect?.value || 'ALL';
+    const allProjects = Storage.getProjects();
+    const targetProjects = scope === 'ALL' ? allProjects : allProjects.filter(p => p.id === scope);
+
+    if (targetProjects.length === 0) {
+      showToast('No projects found for CSV export', 'warning');
+      return;
+    }
+
+    const headers = [
+      'Project Name',
+      'Test Plan',
+      'Phase',
+      'Test Suite',
+      'Test Case ID',
+      'Title',
+      'Description',
+      'Preconditions',
+      'Test Steps',
+      'Expected Result',
+      'Priority',
+      'Category',
+      'Tags',
+      'Current Status',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const rows = [];
+
+    targetProjects.forEach(p => {
+      const planName = p.testPlan?.name || 'Master Test Plan';
+      const phasesMap = new Map();
+      if (p.testPlan && Array.isArray(p.testPlan.phases)) {
+        p.testPlan.phases.forEach(ph => phasesMap.set(ph.id, ph.name));
+      }
+
+      if (Array.isArray(p.testSuites)) {
+        p.testSuites.forEach(s => {
+          const phaseName = phasesMap.get(s.phaseId) || '';
+          if (Array.isArray(s.testCases)) {
+            s.testCases.forEach(tc => {
+              const stepsStr = (tc.steps && tc.steps.length)
+                ? tc.steps.map((st, i) => `${i + 1}. ${st.action || ''}${st.testData ? ' (Data: ' + st.testData + ')' : ''}`).join('\n')
+                : '';
+              const tagsStr = Array.isArray(tc.tags) ? tc.tags.join(', ') : '';
+
+              rows.push([
+                p.name,
+                planName,
+                phaseName,
+                s.name,
+                tc.id,
+                tc.title,
+                tc.description || '',
+                tc.preconditions || '',
+                stepsStr,
+                tc.expectedResult || '',
+                tc.priority || 'Medium',
+                tc.category || s.category || 'Functional',
+                tagsStr,
+                tc.status || 'Not Run',
+                tc.createdAt || '',
+                tc.updatedAt || ''
+              ]);
+            });
+          }
+        });
+      }
+    });
+
+    if (rows.length === 0) {
+      showToast('No test cases found in the selected scope', 'warning');
+      return;
+    }
+
+    const csvContent = generateCSV(headers, rows);
+    const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
+    const filename = `TestPilot_${scopeName}_TestCases_${getISODate()}.csv`;
+
+    downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
+    Storage.addActivity('Exported Test Cases CSV', `${rows.length} Cases (${scopeName})`);
+    showToast(`Exported ${rows.length} test cases to CSV`);
+  }
+
+  function exportExecutionsCSV() {
+    const scope = DOM.exportCsvScopeSelect?.value || 'ALL';
+    const allProjects = Storage.getProjects();
+    const targetProjects = scope === 'ALL' ? allProjects : allProjects.filter(p => p.id === scope);
+
+    if (targetProjects.length === 0) {
+      showToast('No projects found for CSV export', 'warning');
+      return;
+    }
+
+    const headers = [
+      'Project Name',
+      'Test Case ID',
+      'Test Case Title',
+      'Execution ID',
+      'Execution Status',
+      'Actual Result',
+      'Execution Notes',
+      'Tester',
+      'Environment',
+      'Browser / Device',
+      'Build / Version',
+      'Execution Date'
+    ];
+
+    const rows = [];
+
+    targetProjects.forEach(p => {
+      if (Array.isArray(p.executions)) {
+        p.executions.forEach(ex => {
+          rows.push([
+            p.name,
+            ex.testCaseId || '',
+            ex.testCaseTitle || '',
+            ex.id || '',
+            ex.status || 'Pass',
+            ex.actualResult || '',
+            ex.notes || '',
+            ex.tester || 'Anonymous Tester',
+            ex.environment || '',
+            ex.browserDevice || '',
+            ex.buildVersion || '',
+            ex.executedAt || ''
+          ]);
+        });
+      }
+    });
+
+    if (rows.length === 0) {
+      showToast('No execution records found in the selected scope', 'warning');
+      return;
+    }
+
+    const csvContent = generateCSV(headers, rows);
+    const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
+    const filename = `TestPilot_${scopeName}_Executions_${getISODate()}.csv`;
+
+    downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
+    Storage.addActivity('Exported Executions CSV', `${rows.length} Runs (${scopeName})`);
+    showToast(`Exported ${rows.length} execution runs to CSV`);
+  }
+
+  function exportDefectsCSV() {
+    const scope = DOM.exportCsvScopeSelect?.value || 'ALL';
+    const allProjects = Storage.getProjects();
+    const targetProjects = scope === 'ALL' ? allProjects : allProjects.filter(p => p.id === scope);
+
+    if (targetProjects.length === 0) {
+      showToast('No projects found for CSV export', 'warning');
+      return;
+    }
+
+    const headers = [
+      'Project Name',
+      'Defect ID',
+      'Defect Title',
+      'Description',
+      'Severity',
+      'Status',
+      'Linked Test Case',
+      'Linked Execution',
+      'Steps to Reproduce',
+      'Expected Result',
+      'Actual Result',
+      'External Issue URL',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const rows = [];
+
+    targetProjects.forEach(p => {
+      if (Array.isArray(p.defects)) {
+        p.defects.forEach(df => {
+          rows.push([
+            p.name,
+            df.id || '',
+            df.title || 'Untitled Defect',
+            df.description || '',
+            df.severity || 'Medium',
+            df.status || 'Open',
+            df.testCaseId || '',
+            df.executionId || '',
+            df.stepsToReproduce || '',
+            df.expectedResult || '',
+            df.actualResult || '',
+            df.externalIssueUrl || '',
+            df.createdAt || '',
+            df.updatedAt || ''
+          ]);
+        });
+      }
+    });
+
+    if (rows.length === 0) {
+      showToast('No defect records found in the selected scope', 'warning');
+      return;
+    }
+
+    const csvContent = generateCSV(headers, rows);
+    const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
+    const filename = `TestPilot_${scopeName}_Defects_${getISODate()}.csv`;
+
+    downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
+    Storage.addActivity('Exported Defects CSV', `${rows.length} Defects (${scopeName})`);
+    showToast(`Exported ${rows.length} defects to CSV`);
+  }
+
+  function generateAndPrintQAReport(projectId = null, docType = null) {
+    const scope = projectId || DOM.printProjectSelect?.value || 'ALL';
+    const type = docType || DOM.printReportTypeSelect?.value || 'qa-summary';
+    const allProjects = Storage.getProjects();
+    const targetProjects = scope === 'ALL' ? allProjects : allProjects.filter(p => p.id === scope);
+
+    if (!DOM.printableReportContainer) return;
+
+    if (targetProjects.length === 0) {
+      showToast('No projects available to print report', 'warning');
+      return;
+    }
+
+    let totalCases = 0;
+    let passedCases = 0;
+    let failedCases = 0;
+    let blockedCases = 0;
+    let skippedCases = 0;
+    let notRunCases = 0;
+    let executedCases = 0;
+    let totalDefects = 0;
+    let openDefects = 0;
+
+    targetProjects.forEach(p => {
+      totalCases += p.testCaseCount || 0;
+      passedCases += p.passedTests || 0;
+      failedCases += p.failedTests || 0;
+      blockedCases += p.blockedTests || 0;
+      skippedCases += p.skippedTests || 0;
+      notRunCases += p.notRunTests || 0;
+      executedCases += p.executedTests || 0;
+      totalDefects += p.totalDefects || 0;
+      openDefects += p.openDefects || 0;
+    });
+
+    const passRate = executedCases > 0 ? Math.round((passedCases / executedCases) * 100) : 0;
+    const completionRate = totalCases > 0 ? Math.round((executedCases / totalCases) * 100) : 0;
+
+    let docTitle = 'Executive QA Summary & Health Report';
+    if (type === 'case-inventory') docTitle = 'Test Case Specifications & Inventory Ledger';
+    else if (type === 'exec-audit') docTitle = 'Test Execution Runs & Verification Audit Trail';
+    else if (type === 'defect-log') docTitle = 'Defects & Bug Tracking Registry';
+
+    let docScope = '';
+    if (scope === 'ALL') {
+      docScope = `Workspace Scope: All Projects (${targetProjects.length} Active Workspaces)`;
+    } else {
+      const p = targetProjects[0];
+      docScope = `Project Scope: ${p.name} • ${p.type} ${p.version ? '(v' + p.version + ')' : ''} • Status: ${p.status}`;
+    }
+
+    const now = new Date();
+    const dateFormatted = `${now.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    let contentHtml = `
+      <div class="print-header">
+        <div>
+          <div class="print-brand">TestPilot</div>
+          <div class="print-subbrand">Manual QA Testing Architecture • Quality Assurance Ledger</div>
+        </div>
+        <div class="print-meta">
+          <div><strong>Generated:</strong> ${dateFormatted}</div>
+          <div><strong>Classification:</strong> Internal QA Documentation</div>
+        </div>
+      </div>
+
+      <div class="print-doc-title">${escapeHTML(docTitle)}</div>
+      <div class="print-doc-scope">${escapeHTML(docScope)}</div>
+
+      <div class="print-kpi-grid">
+        <div class="print-kpi-card">
+          <div class="print-kpi-label">Total Test Cases</div>
+          <div class="print-kpi-val">${totalCases}</div>
+          <div style="font-size: 8pt; color: #4b5563; margin-top: 2px;">Executed: ${executedCases} (${completionRate}%)</div>
+        </div>
+        <div class="print-kpi-card">
+          <div class="print-kpi-label">Overall Pass Rate</div>
+          <div class="print-kpi-val">${passRate}%</div>
+          <div style="font-size: 8pt; color: #4b5563; margin-top: 2px;">Passed: ${passedCases} • Failed: ${failedCases}</div>
+        </div>
+        <div class="print-kpi-card">
+          <div class="print-kpi-label">Untested / Other</div>
+          <div class="print-kpi-val">${notRunCases}</div>
+          <div style="font-size: 8pt; color: #4b5563; margin-top: 2px;">Blocked: ${blockedCases} • Skipped: ${skippedCases}</div>
+        </div>
+        <div class="print-kpi-card">
+          <div class="print-kpi-label">Defects &amp; Issues</div>
+          <div class="print-kpi-val">${totalDefects}</div>
+          <div style="font-size: 8pt; color: #4b5563; margin-top: 2px;">Open: ${openDefects} unresolved</div>
+        </div>
+      </div>
+    `;
+
+    if (type === 'qa-summary') {
+      contentHtml += `
+        <div class="print-section-title">1. Projects Overview</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Project Name</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Version</th>
+              <th>Total</th>
+              <th>Pass</th>
+              <th>Fail</th>
+              <th>Block</th>
+              <th>Skip</th>
+              <th>Not Run</th>
+              <th>Pass Rate</th>
+              <th>Open Bugs</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${targetProjects.map(p => `
+              <tr>
+                <td><strong>${escapeHTML(p.name)}</strong></td>
+                <td>${escapeHTML(p.type)}</td>
+                <td><span class="print-badge">${escapeHTML(p.status)}</span></td>
+                <td>${escapeHTML(p.version || '—')}</td>
+                <td>${p.testCaseCount || 0}</td>
+                <td>${p.passedTests || 0}</td>
+                <td>${p.failedTests || 0}</td>
+                <td>${p.blockedTests || 0}</td>
+                <td>${p.skippedTests || 0}</td>
+                <td>${p.notRunTests || 0}</td>
+                <td><strong>${p.passRate || 0}%</strong></td>
+                <td>${p.openDefects || 0}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="print-section-title">2. Test Suites &amp; Phases Matrix</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Phase</th>
+              <th>Suite Name</th>
+              <th>Category</th>
+              <th>Cases</th>
+              <th>Passed</th>
+              <th>Failed</th>
+              <th>Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${targetProjects.map(p => {
+              const phasesMap = new Map();
+              if (p.testPlan && Array.isArray(p.testPlan.phases)) {
+                p.testPlan.phases.forEach(ph => phasesMap.set(ph.id, ph.name));
+              }
+              if (!Array.isArray(p.testSuites) || p.testSuites.length === 0) {
+                return `<tr><td>${escapeHTML(p.name)}</td><td colspan="7" style="color: #6b7280;">No test suites defined</td></tr>`;
+              }
+              return p.testSuites.map(s => {
+                const cases = Array.isArray(s.testCases) ? s.testCases : [];
+                const passed = cases.filter(c => c.status === 'Pass').length;
+                const failed = cases.filter(c => c.status === 'Fail').length;
+                const exec = cases.filter(c => c.status !== 'Not Run').length;
+                const pRate = exec > 0 ? Math.round((passed / exec) * 100) : 0;
+                return `
+                  <tr>
+                    <td>${escapeHTML(p.name)}</td>
+                    <td>${escapeHTML(phasesMap.get(s.phaseId) || '—')}</td>
+                    <td><strong>${escapeHTML(s.name)}</strong></td>
+                    <td>${escapeHTML(s.category || 'Functional')}</td>
+                    <td>${cases.length}</td>
+                    <td>${passed}</td>
+                    <td>${failed}</td>
+                    <td>${pRate}% (${exec}/${cases.length})</td>
+                  </tr>
+                `;
+              }).join('');
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    } else if (type === 'case-inventory') {
+      contentHtml += `
+        <div class="print-section-title">Test Case Specifications &amp; Inventory</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Project</th>
+              <th>Suite</th>
+              <th>Title</th>
+              <th>Priority</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Steps</th>
+              <th>Expected Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${targetProjects.map(p => {
+              if (!Array.isArray(p.testSuites)) return '';
+              return p.testSuites.map(s => {
+                if (!Array.isArray(s.testCases)) return '';
+                return s.testCases.map(tc => `
+                  <tr>
+                    <td><code>${escapeHTML(tc.id)}</code></td>
+                    <td>${escapeHTML(p.name)}</td>
+                    <td>${escapeHTML(s.name)}</td>
+                    <td><strong>${escapeHTML(tc.title)}</strong></td>
+                    <td><span class="print-badge">${escapeHTML(tc.priority)}</span></td>
+                    <td>${escapeHTML(tc.category || s.category || 'Functional')}</td>
+                    <td><span class="print-badge">${escapeHTML(tc.status)}</span></td>
+                    <td>${Array.isArray(tc.steps) ? tc.steps.length : 0} steps</td>
+                    <td style="font-size: 8.5pt;">${escapeHTML(tc.expectedResult || '—')}</td>
+                  </tr>
+                `).join('');
+              }).join('');
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    } else if (type === 'exec-audit') {
+      const allExecs = [];
+      targetProjects.forEach(p => {
+        if (Array.isArray(p.executions)) {
+          p.executions.forEach(ex => {
+            allExecs.push({ ...ex, projectName: p.name });
+          });
+        }
+      });
+      allExecs.sort((a, b) => new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime());
+
+      contentHtml += `
+        <div class="print-section-title">Test Execution Runs (${allExecs.length} Total Runs)</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Project</th>
+              <th>Case ID</th>
+              <th>Title</th>
+              <th>Verdict</th>
+              <th>Tester</th>
+              <th>Environment</th>
+              <th>Device / Browser</th>
+              <th>Actual Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allExecs.length === 0 ? '<tr><td colspan="9" style="text-align: center; color: #6b7280;">No execution records found</td></tr>' : allExecs.map(ex => `
+              <tr>
+                <td style="white-space: nowrap;">${formatDisplayDate(ex.executedAt)}</td>
+                <td>${escapeHTML(ex.projectName)}</td>
+                <td><code>${escapeHTML(ex.testCaseId)}</code></td>
+                <td><strong>${escapeHTML(ex.testCaseTitle || '—')}</strong></td>
+                <td><span class="print-badge">${escapeHTML(ex.status)}</span></td>
+                <td>${escapeHTML(ex.tester || 'Tester')}</td>
+                <td>${escapeHTML(ex.environment || '—')}</td>
+                <td>${escapeHTML(ex.browserDevice || '—')}</td>
+                <td style="font-size: 8.5pt;">${escapeHTML(ex.actualResult || ex.notes || '—')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } else if (type === 'defect-log') {
+      const allDefects = [];
+      targetProjects.forEach(p => {
+        if (Array.isArray(p.defects)) {
+          p.defects.forEach(df => {
+            allDefects.push({ ...df, projectName: p.name });
+          });
+        }
+      });
+
+      contentHtml += `
+        <div class="print-section-title">Defects &amp; Bug Tracking Ledger (${allDefects.length} Total)</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Project</th>
+              <th>Title</th>
+              <th>Severity</th>
+              <th>Status</th>
+              <th>Linked Case</th>
+              <th>Reproduction Steps</th>
+              <th>Expected vs Actual</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allDefects.length === 0 ? '<tr><td colspan="8" style="text-align: center; color: #6b7280;">No defects logged</td></tr>' : allDefects.map(df => `
+              <tr>
+                <td><code>${escapeHTML(df.id)}</code></td>
+                <td>${escapeHTML(df.projectName)}</td>
+                <td><strong>${escapeHTML(df.title)}</strong></td>
+                <td><span class="print-badge">${escapeHTML(df.severity)}</span></td>
+                <td><span class="print-badge">${escapeHTML(df.status)}</span></td>
+                <td><code>${escapeHTML(df.testCaseId || '—')}</code></td>
+                <td style="font-size: 8.5pt;">${escapeHTML(df.stepsToReproduce || '—')}</td>
+                <td style="font-size: 8.5pt;">
+                  <div><strong>Exp:</strong> ${escapeHTML(df.expectedResult || '—')}</div>
+                  <div><strong>Act:</strong> ${escapeHTML(df.actualResult || '—')}</div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    contentHtml += `
+      <div class="print-footer">
+        <div>TestPilot Manual QA Testing Architecture • Offline Workspace Engine</div>
+        <div>Confidential QA Audit Report • Printed ${dateFormatted}</div>
+      </div>
+    `;
+
+    DOM.printableReportContainer.innerHTML = contentHtml;
+    window.print();
+  }
+
+  function showImportValidationAlert(message) {
+    if (DOM.importValidationAlert && DOM.importValidationText) {
+      DOM.importValidationText.textContent = message;
+      DOM.importValidationAlert.style.display = 'flex';
+    }
+    showToast(message, 'error');
+  }
+
+  function hideImportValidationAlert() {
+    if (DOM.importValidationAlert) {
+      DOM.importValidationAlert.style.display = 'none';
+    }
+  }
+
+  function handleImportFile(file) {
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+      showImportValidationAlert('Invalid file format. Please select a JSON (.json) file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          showImportValidationAlert('Invalid JSON syntax: Unable to parse file.');
+          return;
+        }
+
+        validateAndPreviewImport(data, file.name, file.size);
+      } catch (err) {
+        showImportValidationAlert(`Import read error: ${err.message}`);
+      }
+    };
+    reader.onerror = function() {
+      showImportValidationAlert('Failed to read the selected file.');
+    };
+    reader.readAsText(file);
+  }
+
+  function validateAndPreviewImport(data, filename, filesize) {
+    if (!data || typeof data !== 'object') {
+      showImportValidationAlert('Invalid data: Imported JSON must be an object or array.');
+      return;
+    }
+
+    // Check version compatibility (reject future unsupported formats)
+    if (data.backupVersion && Number(data.backupVersion) > 1) {
+      showImportValidationAlert(`Unsupported future backup format (version ${data.backupVersion}). This version of TestPilot supports version 1.`);
+      return;
+    }
+    if (data.schemaVersion && Number(data.schemaVersion) > 1) {
+      showImportValidationAlert(`Unsupported future schema version (version ${data.schemaVersion}). This version of TestPilot supports version 1.`);
+      return;
+    }
+
+    let rawProjects = [];
+    let payloadType = 'Workspace Payload';
+
+    if (Array.isArray(data.projects)) {
+      rawProjects = data.projects;
+      payloadType = 'Full Application Backup';
+    } else if (Array.isArray(data)) {
+      rawProjects = data;
+      payloadType = 'Full Application Backup';
+    } else if (data.project && typeof data.project === 'object') {
+      rawProjects = [data.project];
+      payloadType = 'Individual Project Export';
+    } else if ((data.id || data.name) && (data.testPlan || data.testSuites || data.type)) {
+      rawProjects = [data];
+      payloadType = 'Individual Project Export';
+    } else {
+      showImportValidationAlert('Unrecognized TestPilot data format. Missing required project structure.');
+      return;
+    }
+
+    // Sanitize & validate each candidate project
+    rawProjects = rawProjects.filter(p => p && typeof p === 'object' && (p.name || p.id));
+
+    if (rawProjects.length === 0) {
+      showImportValidationAlert('No valid TestPilot project records found in file.');
+      return;
+    }
+
+    // Calculate summary statistics across payload
+    let planCnt = 0;
+    let suiteCnt = 0;
+    let caseCnt = 0;
+    let execCnt = 0;
+    let defectCnt = 0;
+
+    rawProjects.forEach(p => {
+      if (p.testPlan) planCnt++;
+      if (Array.isArray(p.testSuites)) {
+        suiteCnt += p.testSuites.length;
+        p.testSuites.forEach(s => {
+          if (Array.isArray(s.testCases)) caseCnt += s.testCases.length;
+        });
+      }
+      if (Array.isArray(p.executions)) execCnt += p.executions.length;
+      if (Array.isArray(p.defects)) defectCnt += p.defects.length;
+    });
+
+    hideImportValidationAlert();
+
+    // Populate Import Preview Modal
+    if (DOM.importPreviewFilename) DOM.importPreviewFilename.textContent = filename;
+    if (DOM.importPreviewFilesize) {
+      const formattedSize = filesize > 1048576
+        ? (filesize / 1048576).toFixed(1) + ' MB'
+        : (filesize / 1024).toFixed(1) + ' KB';
+      DOM.importPreviewFilesize.textContent = formattedSize;
+    }
+    if (DOM.importPreviewFormat) DOM.importPreviewFormat.textContent = payloadType;
+    if (DOM.importPreviewDate) {
+      DOM.importPreviewDate.textContent = data.exportedAt
+        ? `${formatDisplayDate(data.exportedAt)} (${formatRelativeTime(data.exportedAt)})`
+        : 'Recently';
+    }
+
+    if (DOM.importPreviewProjectsCnt) DOM.importPreviewProjectsCnt.textContent = rawProjects.length.toString();
+    if (DOM.importPreviewPlansCnt) DOM.importPreviewPlansCnt.textContent = planCnt.toString();
+    if (DOM.importPreviewSuitesCnt) DOM.importPreviewSuitesCnt.textContent = suiteCnt.toString();
+    if (DOM.importPreviewCasesCnt) DOM.importPreviewCasesCnt.textContent = caseCnt.toString();
+    if (DOM.importPreviewExecsCnt) DOM.importPreviewExecsCnt.textContent = execCnt.toString();
+    if (DOM.importPreviewDefectsCnt) DOM.importPreviewDefectsCnt.textContent = defectCnt.toString();
+
+    if (DOM.importPreviewProjectsList) {
+      DOM.importPreviewProjectsList.innerHTML = rawProjects.map(p => {
+        const cCnt = Array.isArray(p.testSuites)
+          ? p.testSuites.reduce((acc, s) => acc + (Array.isArray(s.testCases) ? s.testCases.length : 0), 0)
+          : (p.testCaseCount || 0);
+        return `
+          <span class="import-proj-pill">
+            <strong>${escapeHTML(p.name || 'Untitled Project')}</strong>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">(${cCnt} cases)</span>
+          </span>
+        `;
+      }).join('');
+    }
+
+    // Default to Merge mode
+    if (DOM.importModeMerge) DOM.importModeMerge.checked = true;
+    if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'none';
+    if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Merge Data';
+    if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-primary';
+
+    State.pendingImportPayload = {
+      rawProjects: rawProjects,
+      payloadType: payloadType,
+      activities: Array.isArray(data.activities) ? data.activities : []
+    };
+
+    if (DOM.importPreviewModal) {
+      DOM.importPreviewModal.classList.add('open');
+      DOM.importPreviewModal.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function closeImportPreviewModal() {
+    if (DOM.importPreviewModal) {
+      DOM.importPreviewModal.classList.remove('open');
+      DOM.importPreviewModal.setAttribute('aria-hidden', 'true');
+    }
+    State.pendingImportPayload = null;
+    if (DOM.importFileInput) DOM.importFileInput.value = '';
+  }
+
+  function commitImport() {
+    if (!State.pendingImportPayload || !Array.isArray(State.pendingImportPayload.rawProjects)) {
+      showToast('No active import payload to process', 'error');
+      return;
+    }
+
+    const strategy = document.querySelector('input[name="import-mode"]:checked')?.value || 'merge';
+    const importedRaw = State.pendingImportPayload.rawProjects;
+    const currentProjects = Storage.getProjects();
+    const currentActivities = Storage.getActivities();
+
+    if (strategy === 'replace') {
+      // 1. Create safety rollback snapshot in sessionStorage
+      Storage.saveRollbackSnapshot(currentProjects, currentActivities);
+
+      // 2. Persist imported projects through the normalization engine
+      Storage.saveProjects(importedRaw);
+      const normalized = Storage.getProjects();
+      Storage.saveProjects(normalized);
+
+      // 3. Restore activities if provided
+      if (Array.isArray(State.pendingImportPayload.activities) && State.pendingImportPayload.activities.length > 0) {
+        Storage.saveActivities(State.pendingImportPayload.activities);
+      }
+      Storage.addActivity('Restored Workspace Backup', `${normalized.length} Projects`);
+
+      closeImportPreviewModal();
+      showToast(`Restored ${normalized.length} projects. Pre-restore rollback snapshot saved.`, 'success');
+      renderDashboard();
+      renderDataWorkspace();
+    } else {
+      // MERGE Strategy
+      const existingIds = new Set(currentProjects.map(p => p.id));
+      const existingNames = new Set(currentProjects.map(p => (p.name || '').trim().toLowerCase()));
+
+      const processedImported = importedRaw.map((p, idx) => {
+        const newProj = { ...p };
+        // Check for duplicate ID
+        if (!newProj.id || existingIds.has(newProj.id)) {
+          newProj.id = 'proj_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6);
+        }
+        // Check for duplicate Name
+        if (newProj.name && existingNames.has(newProj.name.trim().toLowerCase())) {
+          newProj.name = `${newProj.name} (Imported)`;
+        }
+        return newProj;
+      });
+
+      const merged = [...currentProjects, ...processedImported];
+      Storage.saveProjects(merged);
+      const normalized = Storage.getProjects();
+      Storage.saveProjects(normalized);
+
+      Storage.addActivity('Merged Import', `${processedImported.length} Projects`);
+
+      closeImportPreviewModal();
+      showToast(`Merged ${processedImported.length} projects into workspace.`, 'success');
+      renderDashboard();
+      renderDataWorkspace();
+    }
+  }
+
+  function executeRollback() {
+    const snapshot = Storage.getRollbackSnapshot();
+    if (!snapshot || !Array.isArray(snapshot.projects)) {
+      showToast('No valid recovery snapshot available to roll back to.', 'warning');
+      return;
+    }
+
+    Storage.saveProjects(snapshot.projects);
+    if (Array.isArray(snapshot.activities)) {
+      Storage.saveActivities(snapshot.activities);
+    }
+    Storage.addActivity('Rolled Back Workspace', `${snapshot.projects.length} Projects Restored`);
+    Storage.clearRollbackSnapshot();
+
+    showToast(`Workspace rolled back to snapshot (${snapshot.projects.length} projects restored).`, 'info');
+    renderDashboard();
+    renderDataWorkspace();
+  }
+
+  function openResetConfirmModal() {
+    if (!DOM.resetConfirmModal) return;
+    if (DOM.resetConfirmCheckbox) DOM.resetConfirmCheckbox.checked = false;
+    if (DOM.resetModalConfirmBtn) DOM.resetModalConfirmBtn.disabled = true;
+    DOM.resetConfirmModal.classList.add('open');
+    DOM.resetConfirmModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeResetConfirmModal() {
+    if (!DOM.resetConfirmModal) return;
+    DOM.resetConfirmModal.classList.remove('open');
+    DOM.resetConfirmModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function executeWorkspaceReset() {
+    const currentProjects = Storage.getProjects();
+    const currentActivities = Storage.getActivities();
+    Storage.saveRollbackSnapshot(currentProjects, currentActivities);
+
+    Storage.saveProjects([]);
+    Storage.clearActivities();
+    closeResetConfirmModal();
+
+    showToast('All workspace projects and test data have been permanently cleared.', 'warning');
+    renderDashboard();
+    renderDataWorkspace();
+  }
+
+  // ==========================================================================
   // Navigation & View Routing
   // ==========================================================================
   function switchView(viewName, optArg = null) {
@@ -6480,6 +7686,8 @@
     } else if (viewName === 'reports') {
       if (optArg) State.reportsProjectId = optArg;
       renderReportsWorkspace();
+    } else if (viewName === 'data') {
+      renderDataWorkspace();
     }
   }
 
@@ -6987,7 +8195,9 @@
       DOM.executionModal,
       DOM.executionHistoryModal,
       DOM.defectModal,
-      DOM.defectViewModal
+      DOM.defectViewModal,
+      DOM.importPreviewModal,
+      DOM.resetConfirmModal
     ].forEach(modal => {
       if (modal) {
         modal.addEventListener('click', (e) => {
@@ -6999,8 +8209,17 @@
       }
     });
 
-    // Escape Key Handler
+    // Global Keyboard Handlers (Escape to close modals, Cmd+K / Ctrl+K for search)
     window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        if (DOM.topQuickSearch) {
+          DOM.topQuickSearch.focus();
+          DOM.topQuickSearch.select();
+        }
+        return;
+      }
+
       if (e.key === 'Escape') {
         [
           DOM.projectModal,
@@ -7013,7 +8232,9 @@
           DOM.executionModal,
           DOM.executionHistoryModal,
           DOM.defectModal,
-          DOM.defectViewModal
+          DOM.defectViewModal,
+          DOM.importPreviewModal,
+          DOM.resetConfirmModal
         ].forEach(modal => {
           if (modal && modal.classList.contains('open')) {
             modal.classList.remove('open');
@@ -7081,7 +8302,7 @@
 
     if (DOM.reportsExportBtn) {
       DOM.reportsExportBtn.addEventListener('click', () => {
-        window.print();
+        generateAndPrintQAReport(State.reportsProjectId, 'qa-summary');
       });
     }
 
@@ -7094,6 +8315,146 @@
     if (DOM.repJumpExecBtn) {
       DOM.repJumpExecBtn.addEventListener('click', () => {
         switchView('execution', State.reportsProjectId === 'ALL' ? null : State.reportsProjectId);
+      });
+    }
+
+    // 12. Data Management & Backups Controls (Prompt 6)
+    if (DOM.dataTabBtns) {
+      DOM.dataTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-tab');
+          if (tab) switchDataTab(tab);
+        });
+      });
+    }
+
+    if (DOM.btnExportProjectJson) {
+      DOM.btnExportProjectJson.addEventListener('click', () => {
+        const pId = DOM.exportProjectSelect?.value;
+        if (pId) exportProjectJSON(pId);
+        else showToast('Please select a project to export', 'warning');
+      });
+    }
+
+    if (DOM.btnCreateFullBackup) {
+      DOM.btnCreateFullBackup.addEventListener('click', exportFullApplicationBackup);
+    }
+
+    if (DOM.btnExportCasesCsv) {
+      DOM.btnExportCasesCsv.addEventListener('click', exportTestCasesCSV);
+    }
+
+    if (DOM.btnExportExecsCsv) {
+      DOM.btnExportExecsCsv.addEventListener('click', exportExecutionsCSV);
+    }
+
+    if (DOM.btnExportDefectsCsv) {
+      DOM.btnExportDefectsCsv.addEventListener('click', exportDefectsCSV);
+    }
+
+    if (DOM.btnPrintQaReport) {
+      DOM.btnPrintQaReport.addEventListener('click', () => {
+        generateAndPrintQAReport();
+      });
+    }
+
+    // Drag & Drop and File Selection
+    if (DOM.btnBrowseFile) {
+      DOM.btnBrowseFile.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (DOM.importFileInput) DOM.importFileInput.click();
+      });
+    }
+
+    if (DOM.importDropzone) {
+      DOM.importDropzone.addEventListener('click', (e) => {
+        if (e.target !== DOM.importFileInput && DOM.importFileInput) {
+          DOM.importFileInput.click();
+        }
+      });
+
+      DOM.importDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.importDropzone.classList.add('dragover');
+      });
+
+      DOM.importDropzone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.importDropzone.classList.remove('dragover');
+      });
+
+      DOM.importDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.importDropzone.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleImportFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    if (DOM.importFileInput) {
+      DOM.importFileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleImportFile(e.target.files[0]);
+        }
+      });
+    }
+
+    // Import Preview Modal Controls
+    if (DOM.importModeMerge) {
+      DOM.importModeMerge.addEventListener('change', () => {
+        if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'none';
+        if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Merge Data';
+        if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-primary';
+      });
+    }
+
+    if (DOM.importModeReplace) {
+      DOM.importModeReplace.addEventListener('change', () => {
+        if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'flex';
+        if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Replace Workspace';
+        if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-danger';
+      });
+    }
+
+    if (DOM.importPreviewClose) DOM.importPreviewClose.addEventListener('click', closeImportPreviewModal);
+    if (DOM.importPreviewCancelBtn) DOM.importPreviewCancelBtn.addEventListener('click', closeImportPreviewModal);
+    if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.addEventListener('click', commitImport);
+
+    // Rollback & Reset Controls
+    if (DOM.btnExecuteRollback) {
+      DOM.btnExecuteRollback.addEventListener('click', executeRollback);
+    }
+
+    if (DOM.btnTriggerResetModal) {
+      DOM.btnTriggerResetModal.addEventListener('click', openResetConfirmModal);
+    }
+
+    if (DOM.resetModalClose) DOM.resetModalClose.addEventListener('click', closeResetConfirmModal);
+    if (DOM.resetModalCancel) DOM.resetModalCancel.addEventListener('click', closeResetConfirmModal);
+
+    if (DOM.resetConfirmCheckbox) {
+      DOM.resetConfirmCheckbox.addEventListener('change', (e) => {
+        if (DOM.resetModalConfirmBtn) DOM.resetModalConfirmBtn.disabled = !e.target.checked;
+      });
+    }
+
+    if (DOM.resetBackupFirstBtn) {
+      DOM.resetBackupFirstBtn.addEventListener('click', () => {
+        exportFullApplicationBackup();
+      });
+    }
+
+    if (DOM.resetModalConfirmBtn) {
+      DOM.resetModalConfirmBtn.addEventListener('click', executeWorkspaceReset);
+    }
+
+    if (DOM.settingsJumpDataBtn) {
+      DOM.settingsJumpDataBtn.addEventListener('click', () => {
+        switchView('data');
       });
     }
 
