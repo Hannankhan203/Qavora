@@ -7694,11 +7694,13 @@
   function openMobileSidebar() {
     if (DOM.sidebar) DOM.sidebar.classList.add('open');
     if (DOM.sidebarOverlay) DOM.sidebarOverlay.classList.add('active');
+    document.body.classList.add('mobile-nav-open');
   }
 
   function closeMobileSidebar() {
     if (DOM.sidebar) DOM.sidebar.classList.remove('open');
     if (DOM.sidebarOverlay) DOM.sidebarOverlay.classList.remove('active');
+    document.body.classList.remove('mobile-nav-open');
   }
 
   function applyTheme(theme) {
@@ -8221,6 +8223,7 @@
       }
 
       if (e.key === 'Escape') {
+        closeMobileSidebar();
         [
           DOM.projectModal,
           DOM.testplanModal,
@@ -8241,6 +8244,13 @@
             modal.setAttribute('aria-hidden', 'true');
           }
         });
+      }
+    });
+
+    // Auto-close mobile drawer when viewport expands to desktop
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 1024 && DOM.sidebar && DOM.sidebar.classList.contains('open')) {
+        closeMobileSidebar();
       }
     });
 

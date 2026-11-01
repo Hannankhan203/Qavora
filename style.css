@@ -1249,6 +1249,8 @@ textarea:focus-visible,
   padding: 20px;
   opacity: 0;
   transition: opacity 0.2s ease;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-backdrop.open {
@@ -1263,11 +1265,13 @@ textarea:focus-visible,
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 520px;
+  max-height: calc(100dvh - 36px);
   display: flex;
   flex-direction: column;
   transform: translateY(12px) scale(0.98);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+  margin: auto;
 }
 
 .modal-backdrop.open .modal-dialog {
@@ -1339,6 +1343,10 @@ textarea:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .alert-banner {
@@ -2668,11 +2676,14 @@ textarea:focus-visible,
   background-color: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
 }
 
 .cases-table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   text-align: left;
   font-size: 0.84rem;
@@ -3413,10 +3424,110 @@ textarea:focus-visible,
   flex-shrink: 0;
 }
 
+/* Background Scroll Lock when Modal or Mobile Drawer is active */
+html:has(.modal-backdrop.open),
+body:has(.modal-backdrop.open),
+body.modal-open,
+body.mobile-nav-open {
+  overflow: hidden !important;
+}
+
 /* ==========================================================================
-   Responsive Design Breakpoints
+   Responsive Design Breakpoints System (320px to Ultra-wide 1920px+)
    ========================================================================== */
-@media (max-width: 1024px) {
+
+/* 1. Ultra-Wide & Large Desktop Monitors (1536px and above) */
+@media (min-width: 1536px) {
+  .content-viewport {
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .reports-kpi-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+}
+
+/* 2. Small Laptop & Large Tablet (1024px to 1279px) */
+@media (max-width: 1279px) {
+  .top-nav {
+    padding: 0 20px;
+  }
+
+  .top-nav-center {
+    max-width: 300px;
+    margin: 0 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .project-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .projects-grid {
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  }
+
+  .reports-kpi-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+/* 3. Tablet Viewport (768px to 1023px) — Mobile Drawer Sidebar Navigation */
+@media (max-width: 1023px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: 280px;
+    max-width: 85vw;
+    z-index: 50;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: var(--bg-backdrop);
+    backdrop-filter: blur(4px);
+    z-index: 45;
+  }
+
+  .sidebar-overlay.active {
+    display: block;
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sidebar-toggle-btn {
+    display: flex;
+  }
+
+  .main-wrapper {
+    margin-left: 0;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .content-viewport {
+    padding: 20px 24px;
+  }
+
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3432,49 +3543,54 @@ textarea:focus-visible,
   .project-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .suites-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+
+  .reports-two-col-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .csv-export-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .plan-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plans-top-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .filter-toolbar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .nav-link {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
 }
 
-@media (max-width: 768px) {
-  .sidebar {
-    transform: translateX(-100%);
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .sidebar-overlay.active {
-    display: block;
-  }
-
-  .sidebar-close-btn {
-    display: block;
-  }
-
-  .main-wrapper {
-    margin-left: 0;
-  }
-
-  .sidebar-toggle-btn {
-    display: flex;
-  }
-
-  .top-nav {
-    padding: 0 16px;
-  }
-
+/* 4. Medium Tablet / Small Landscape Screens (max-width: 899px) */
+@media (max-width: 899px) {
   .top-nav-center {
     display: none;
-  }
-
-  .content-viewport {
-    padding: 16px;
   }
 
   .welcome-banner {
     flex-direction: column;
     align-items: flex-start;
     padding: 20px;
+    gap: 16px;
   }
 
   .welcome-actions {
@@ -3483,15 +3599,13 @@ textarea:focus-visible,
 
   .welcome-actions .btn {
     width: 100%;
-  }
-
-  .user-meta {
-    display: none;
+    justify-content: center;
   }
 
   .section-hero {
     flex-direction: column;
     align-items: flex-start;
+    gap: 14px;
   }
 
   .section-hero-actions {
@@ -3500,39 +3614,192 @@ textarea:focus-visible,
 
   .section-hero-actions .btn {
     width: 100%;
+    justify-content: center;
   }
 
   .filter-toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
+  }
+
+  .filter-search-group {
+    width: 100%;
+    min-width: 0;
   }
 
   .filter-dropdowns {
     width: 100%;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .form-row-2 {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
   }
 
   .detail-header-card {
     flex-direction: column;
     align-items: stretch;
+    gap: 16px;
+    padding: 18px 20px;
   }
 
   .detail-header-actions {
     width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .plans-top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .plans-project-picker-group {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .picker-select-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .plans-top-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .plans-top-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .exec-top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .reports-top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .reports-custom-dates-group {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .custom-date-input {
+    flex: 1;
+    min-width: 110px;
+  }
+
+  .exec-metrics-bar {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   }
 }
 
-@media (max-width: 480px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
+/* 5. Mobile & Small Tablet (max-width: 767px) */
+@media (max-width: 767px) {
+  .top-nav {
+    padding: 0 16px;
   }
 
-  .project-stats-grid {
+  .content-viewport {
+    padding: 16px;
+  }
+
+  .user-meta {
+    display: none;
+  }
+
+  /* Form columns collapsing */
+  .form-row-2 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .form-row-3 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Prevent automatic iOS Safari zoom by enforcing 16px font size on inputs */
+  input, select, textarea, .form-control {
+    font-size: 16px !important;
+  }
+
+  /* Project Details action buttons grid */
+  .detail-header-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .detail-header-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .detail-qa-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .dash-analytics-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .plan-metrics-bar {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .metric-breakdown {
+    grid-column: 1 / -1;
+  }
+
+  /* Suite Explorer & Phase Cards */
+  .suite-header-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .suite-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .suite-header-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .phase-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .phase-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .suites-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3540,8 +3807,195 @@ textarea:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  /* Test Execution Step Runner mobile adjustments */
+  .exec-step-main {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .exec-step-actions {
+    justify-content: flex-end;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .step-status-btn {
+    min-height: 38px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* Modal Dialog mobile responsive sizing */
+  .modal-dialog {
+    max-width: calc(100% - 20px);
+    max-height: calc(100dvh - 20px);
+    margin: 10px auto;
+    border-radius: var(--radius-md);
+  }
+
+  .modal-form {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 auto;
+    min-width: 120px;
+    min-height: 40px;
+    justify-content: center;
+  }
+}
+
+/* 6. Standard Mobile Devices (max-width: 599px) */
+@media (max-width: 599px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .project-stat-box {
+    padding: 12px;
+  }
+
+  .reports-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .report-kpi-card {
+    padding: 12px;
+  }
+
+  .report-kpi-val {
+    font-size: 1.35rem;
+  }
+
+  .report-kpi-caption {
+    font-size: 0.68rem;
+  }
+
   .filter-dropdowns {
     grid-template-columns: 1fr;
+  }
+
+  .filter-select-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .filter-select-wrapper label {
+    margin-bottom: 2px;
+  }
+
+  .filter-select {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .clear-filters-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .csv-export-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .csv-export-card {
+    padding: 14px;
+  }
+
+  .detail-qa-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .donut-chart-wrapper {
+    width: 150px;
+    height: 150px;
+  }
+
+  .donut-legend-wrap {
+    min-width: 100%;
+  }
+
+  .data-tab-btn {
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+  }
+
+  .data-tab-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .project-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .card-action-group {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .project-card-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* 7. Small Mobile Screens (320px to 480px) */
+@media (max-width: 480px) {
+  body {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .sidebar {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .top-nav {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .top-nav-left {
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-title-group {
+    min-width: 0;
+  }
+
+  .page-title {
+    font-size: clamp(0.92rem, 3.8vw, 1.05rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .top-nav-right {
+    gap: 6px;
   }
 
   .top-nav-right #header-create-btn span {
@@ -3549,11 +4003,135 @@ textarea:focus-visible,
   }
 
   .top-nav-right #header-create-btn {
-    padding: 7px;
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.72rem;
+  }
+
+  .content-viewport {
+    padding: 10px 12px;
+  }
+
+  .modal-backdrop {
+    padding: 6px;
   }
 
   .modal-dialog {
-    margin: 12px;
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+    margin: 6px auto;
+    border-radius: var(--radius-sm);
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-title {
+    font-size: 0.95rem;
+  }
+
+  .modal-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .modal-form {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 42px;
+  }
+
+  .priority-tags-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .priority-badge {
+    justify-content: center;
+    font-size: 0.68rem;
+  }
+
+  .exec-quick-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .exec-quick-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .exec-steps-list {
+    max-height: 220px;
+  }
+
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .toast {
+    width: 100%;
+  }
+}
+
+/* 8. Ultra-compact Small Mobile (max-width: 360px down to 320px) */
+@media (max-width: 360px) {
+  .page-subtitle {
+    display: none;
+  }
+
+  .project-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reports-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-qa-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-analytics-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-metrics-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 9. Accessibility — Respect Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
