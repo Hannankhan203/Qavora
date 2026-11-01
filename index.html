@@ -51,7 +51,38 @@
 
       <nav class="sidebar-nav">
         <div class="nav-section-title">MAIN NAVIGATION</div>
-        <button class="nav-link active" data-view="dashboard" id="nav-dashboard">
+        <button class="nav-link active" data-view="checklist-generator" id="nav-checklist-generator">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4"></path>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Create QA Checklist</span>
+        </button>
+
+        <button class="nav-link" data-view="my-checklists" id="nav-my-checklists">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+            </svg>
+          </span>
+          <span class="nav-label">My QA Checklists</span>
+          <span class="nav-badge" id="nav-checklists-count">0</span>
+        </button>
+
+        <button class="nav-link" data-view="qa-runner" id="nav-qa-runner">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </span>
+          <span class="nav-label">QA Test Runner</span>
+          <span class="qa-nav-active-dot" id="nav-runner-active-dot" style="display: none;" title="Active checklist ready"></span>
+        </button>
+
+        <button class="nav-link" data-view="dashboard" id="nav-dashboard">
           <span class="nav-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="9"></rect>
@@ -165,8 +196,8 @@
             </svg>
           </button>
           <div class="page-title-group">
-            <h1 id="page-title" class="page-title">Dashboard</h1>
-            <span class="page-subtitle" id="page-subtitle">Overview & testing health</span>
+            <h1 id="page-title" class="page-title">Create a QA Checklist</h1>
+            <span class="page-subtitle" id="page-subtitle">Import &amp; structure manual testing plans</span>
           </div>
         </div>
 
@@ -229,8 +260,446 @@
 
       <!-- Main Content Viewport -->
       <main class="content-viewport">
+        <!-- 0. CREATE A QA CHECKLIST VIEW (Prompt 1 Main Workflow) -->
+        <section id="view-checklist-generator" class="view-section active">
+          <!-- Page Hero Header -->
+          <div class="qa-gen-hero">
+            <div class="qa-gen-hero-content">
+              <div class="welcome-badge">
+                <span class="pulse-dot"></span>
+                <span>Manual QA Checklist Generator</span>
+              </div>
+              <h2 class="qa-gen-title">Create a QA Checklist</h2>
+              <p class="qa-gen-description">
+                Paste your manual testing plan below. TestPilot will automatically identify its phases, descriptions, categories, and individual tests to generate an interactive checklist.
+              </p>
+            </div>
+          </div>
+
+          <!-- Quick Resume Banner when Saved Checklists Exist -->
+          <div id="qa-gen-saved-banner" class="qa-gen-saved-banner" style="display: none;">
+            <span id="qa-gen-saved-banner-text" class="qa-gen-saved-banner-text">Saved checklists ready</span>
+            <div class="qa-gen-saved-banner-actions">
+              <button type="button" id="btn-gen-resume-runner" class="btn btn-primary btn-xs">
+                <span>Continue Testing</span>
+              </button>
+              <button type="button" id="btn-gen-open-saved-list" class="btn btn-secondary btn-xs">
+                <span>My QA Checklists</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Input & Format Guidance Workspace Grid -->
+          <div class="qa-gen-input-layout">
+            <!-- Left / Main Column: Large Textarea & Action Controls -->
+            <div class="qa-gen-editor-card">
+              <div class="qa-gen-editor-header">
+                <label for="qa-plan-textarea" class="qa-gen-editor-label">Manual QA Testing Plan</label>
+                <span id="qa-plan-input-stats" class="qa-gen-input-stats">0 lines • Ready for paste</span>
+              </div>
+
+              <textarea
+                id="qa-plan-textarea"
+                class="qa-gen-textarea"
+                rows="15"
+                placeholder="Example:&#10;&#10;Phase 0 — Environment Setup&#10;Prepare the application for testing.&#10;&#10;Desktop:&#10;- Open the application.&#10;- Check for console errors.&#10;- Verify the dashboard loads.&#10;&#10;Phase 1 — Authentication&#10;Test user authentication.&#10;&#10;- AUTH-001: Register an account.&#10;- AUTH-002: Log in with valid credentials.&#10;- Test invalid credentials."
+                spellcheck="false"
+              ></textarea>
+
+              <div class="qa-gen-editor-actions">
+                <button type="button" id="btn-generate-checklist" class="btn btn-primary btn-lg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="9 11 12 14 22 4"></polyline>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                  </svg>
+                  <span>Generate Checklist</span>
+                </button>
+
+                <button type="button" id="btn-clear-checklist-text" class="btn btn-secondary btn-lg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                  <span>Clear Text</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Right / Side Column: Flexible Format Guidance -->
+            <aside class="qa-gen-guidance-card" aria-label="Supported QA Plan Formats">
+              <div class="qa-guidance-header">
+                <div>
+                  <h3 class="qa-guidance-title">What You Can Paste</h3>
+                  <p class="qa-guidance-subtitle">No strict template required — mix and match formats freely.</p>
+                </div>
+                <button type="button" id="btn-load-sample-plan" class="btn btn-secondary btn-xs" title="Insert a multi-phase example QA plan">
+                  <span>Try Sample</span>
+                </button>
+              </div>
+
+              <ul class="qa-guidance-list">
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Numbered phases &amp; phase names</strong>
+                    <span>e.g., <code>PHASE 0 — Setup</code>, <code>Phase 1: Login</code>, <code>## Phase 2</code>, or <code>0. Setup</code></span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Phase descriptions</strong>
+                    <span>Introductory goals, environment notes, and instructions preserved without turning into checkboxes</span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Subheadings &amp; testing categories</strong>
+                    <span>e.g., <code>Desktop:</code>, <code>Mobile View:</code>, or Markdown subheadings like <code>### Validation</code></span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Bullet-point &amp; checkbox test cases</strong>
+                    <span>Supports <code>-</code>, <code>*</code>, <code>•</code>, <code>☐</code>, and <code>[ ]</code> list items</span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Numbered test cases</strong>
+                    <span>Ordered checks like <code>1. Test valid credentials.</code></span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Existing test IDs &amp; priorities</strong>
+                    <span>Preserves identifiers like <code>TEST-001 — ...</code> or <code>AUTH-001: ...</code></span>
+                  </div>
+                </li>
+                <li>
+                  <span class="qa-guidance-dot"></span>
+                  <div>
+                    <strong>Final regression &amp; release checklists</strong>
+                    <span>End-of-plan sign-off and release readiness sections</span>
+                  </div>
+                </li>
+              </ul>
+            </aside>
+          </div>
+
+          <!-- Parser Feedback / Diagnostic Alerts -->
+          <div id="qa-parser-alerts" class="qa-parser-alerts" aria-live="polite"></div>
+
+          <!-- Generated Checklist Preview & Review Section -->
+          <div id="qa-checklist-preview-wrapper" class="qa-preview-wrapper" style="display: none;">
+            <!-- Confirm & Start Testing Bar -->
+            <div class="qa-confirm-start-bar">
+              <div class="qa-confirm-title-group">
+                <label for="qa-preview-title-input" class="qa-confirm-label">Checklist Title:</label>
+                <input
+                  type="text"
+                  id="qa-preview-title-input"
+                  class="qa-inline-input qa-confirm-title-input"
+                  placeholder="Enter a title for this QA checklist..."
+                />
+              </div>
+              <button type="button" id="btn-start-testing-top" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Start Testing</span>
+              </button>
+            </div>
+
+            <div class="qa-preview-toolbar">
+              <div class="qa-preview-toolbar-left">
+                <h3 class="qa-preview-heading">Generated Checklist Preview</h3>
+                <div class="qa-preview-stats-chips">
+                  <span class="qa-stat-pill"><strong id="qa-summary-phases">0</strong> Phases</span>
+                  <span class="qa-stat-pill"><strong id="qa-summary-categories">0</strong> Categories</span>
+                  <span class="qa-stat-pill"><strong id="qa-summary-tests">0</strong> Tests</span>
+                  <span class="qa-stat-pill"><strong id="qa-summary-notes">0</strong> Notes</span>
+                </div>
+              </div>
+
+              <div class="qa-preview-toolbar-right">
+                <div class="qa-mode-segmented" role="group" aria-label="Preview display mode">
+                  <button type="button" id="btn-preview-mode-editable" class="qa-mode-btn active" aria-pressed="true">
+                    Edit &amp; Review
+                  </button>
+                  <button type="button" id="btn-preview-mode-formatted" class="qa-mode-btn" aria-pressed="false">
+                    Clean Preview
+                  </button>
+                </div>
+
+                <button type="button" id="btn-preview-add-phase-top" class="btn btn-secondary btn-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>Add Phase</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Detected Plan Title / Global Preamble Notes -->
+            <div id="qa-preview-doc-meta" class="qa-preview-doc-meta" style="display: none;"></div>
+
+            <!-- Extracted Phases, Descriptions, Categories, and Tests -->
+            <div id="qa-preview-phases-root" class="qa-preview-phases-root"></div>
+
+            <!-- Bottom Actions: Add Phase & Start Testing -->
+            <div class="qa-preview-footer-actions">
+              <button type="button" id="btn-preview-add-phase-bottom" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Add Another Phase</span>
+              </button>
+
+              <button type="button" id="btn-start-testing-bottom" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Start Testing</span>
+              </button>
+            </div>
+
+            <!-- Unclassified Content Review Panel (shown only when ambiguous content exists) -->
+            <div id="qa-unclassified-wrapper" class="qa-unclassified-panel" style="display: none;">
+              <div class="qa-unclassified-header">
+                <div>
+                  <h4 class="qa-unclassified-title">Unclassified Content for Review</h4>
+                  <p class="qa-unclassified-desc">
+                    These lines could not be confidently classified. Review and assign them as tests, phases, or descriptions—nothing was discarded.
+                  </p>
+                </div>
+                <span id="qa-unclassified-count" class="panel-counter">0 items</span>
+              </div>
+              <div id="qa-unclassified-list" class="qa-unclassified-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 0B. MY QA CHECKLISTS VIEW (Prompt 2 Saved Checklists Workspace) -->
+        <section id="view-my-checklists" class="view-section">
+          <div class="section-hero">
+            <div class="section-hero-text">
+              <h2 class="section-hero-title">My QA Checklists</h2>
+              <p class="section-hero-desc">Access, resume, rename, or manage all your saved manual QA testing checklists.</p>
+            </div>
+            <div class="section-hero-actions qa-hero-btn-group">
+              <button type="button" id="btn-mychk-resume-active" class="btn btn-secondary" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Active Test Runner</span>
+              </button>
+              <button type="button" id="btn-mychk-create-new" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Create QA Checklist</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="project-stats-grid qa-mychk-stats-grid">
+            <div class="project-stat-box">
+              <span class="project-stat-label">Saved Checklists</span>
+              <div class="project-stat-val" id="mychk-stat-total">0</div>
+              <span class="project-stat-hint">Stored locally in browser</span>
+            </div>
+            <div class="project-stat-box">
+              <span class="project-stat-label">In Progress</span>
+              <div class="project-stat-val text-blue" id="mychk-stat-inprogress">0</div>
+              <span class="project-stat-hint">Partially executed</span>
+            </div>
+            <div class="project-stat-box">
+              <span class="project-stat-label">Completed</span>
+              <div class="project-stat-val text-green" id="mychk-stat-completed">0</div>
+              <span class="project-stat-hint">100% of tests checked</span>
+            </div>
+          </div>
+
+          <div class="filter-toolbar qa-mychk-toolbar">
+            <div class="filter-search-group">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                type="text"
+                id="mychk-search-input"
+                class="filter-search-input"
+                placeholder="Filter saved checklists by title..."
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <div id="mychk-cards-container" class="qa-mychk-container"></div>
+        </section>
+
+        <!-- 0C. MANUAL QA TEST RUNNER VIEW (Prompt 2 Active Execution Workspace) -->
+        <section id="view-qa-runner" class="view-section">
+          <!-- Workflow Navigation Strip -->
+          <div class="qa-runner-top-nav">
+            <div class="qa-runner-nav-left">
+              <button type="button" id="btn-runner-back-list" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="19" y1="12" x2="5" y2="12"></line>
+                  <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span>My QA Checklists</span>
+              </button>
+
+              <div class="qa-runner-switcher-group">
+                <label for="runner-checklist-select" class="qa-runner-switcher-label">Active Checklist:</label>
+                <select id="runner-checklist-select" class="filter-select qa-runner-select"></select>
+              </div>
+            </div>
+
+            <div class="qa-runner-nav-right">
+              <button type="button" id="btn-runner-create-new" class="btn btn-ghost btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Create New Checklist</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Empty State if No Saved Checklists Exist -->
+          <div id="runner-empty-state" class="empty-state qa-mychk-empty" style="display: none;">
+            <div class="empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <h3 class="empty-state-title">No Active Checklist Selected</h3>
+            <p class="empty-state-desc">Generate a checklist from a manual QA plan or open a saved checklist to begin testing.</p>
+            <div class="qa-empty-actions">
+              <button type="button" id="btn-runner-empty-create" class="btn btn-primary">
+                <span>Create QA Checklist</span>
+              </button>
+              <button type="button" id="btn-runner-empty-list" class="btn btn-secondary">
+                <span>My QA Checklists</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Checklist Runner Workspace -->
+          <div id="runner-active-workspace" style="display: none;">
+            <!-- Checklist Title & Metadata Card -->
+            <div class="qa-runner-header-card">
+              <div class="qa-runner-title-section">
+                <div id="runner-title-display-wrap" class="qa-runner-title-display">
+                  <h2 id="runner-checklist-title" class="qa-runner-main-title">QA Checklist</h2>
+                  <span id="runner-checklist-status-pill" class="qa-status-pill qa-pill-notstarted">Not Started</span>
+                  <button type="button" id="btn-runner-rename-title" class="btn btn-ghost btn-xs" title="Rename checklist">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span>Rename</span>
+                  </button>
+                </div>
+
+                <div id="runner-title-edit-wrap" class="qa-runner-title-edit" style="display: none;">
+                  <input
+                    type="text"
+                    id="runner-title-input"
+                    class="qa-inline-input qa-runner-title-input"
+                    aria-label="Checklist title"
+                  />
+                  <button type="button" id="btn-runner-save-title" class="btn btn-primary btn-xs">Save</button>
+                  <button type="button" id="btn-runner-cancel-title" class="btn btn-ghost btn-xs">Cancel</button>
+                </div>
+
+                <div class="qa-runner-timestamps">
+                  <span id="runner-created-meta">Created Recently</span>
+                  <span class="dot-sep">•</span>
+                  <span id="runner-updated-meta">Saved Recently</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- QA Testing Progress Card (Section 3) -->
+            <div class="qa-runner-progress-panel">
+              <div class="qa-runner-progress-top">
+                <div>
+                  <h3 class="qa-runner-progress-heading">QA Testing Progress</h3>
+                  <p class="qa-runner-progress-sub">Progress saves automatically to browser storage as you check off tests</p>
+                </div>
+                <div class="qa-runner-big-pct">
+                  <span class="qa-runner-pct-label">Progress:</span>
+                  <strong id="runner-stat-percent">0%</strong>
+                </div>
+              </div>
+
+              <div class="progress-bar-track qa-runner-main-bar-track">
+                <div id="runner-overall-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+
+              <div class="qa-runner-metrics-grid">
+                <div class="qa-runner-metric-box">
+                  <span class="qa-runner-metric-label">Phases</span>
+                  <strong id="runner-stat-phases" class="qa-runner-metric-val">0</strong>
+                </div>
+                <div class="qa-runner-metric-box">
+                  <span class="qa-runner-metric-label">Total Tests</span>
+                  <strong id="runner-stat-total" class="qa-runner-metric-val">0</strong>
+                </div>
+                <div class="qa-runner-metric-box">
+                  <span class="qa-runner-metric-label">Completed</span>
+                  <strong id="runner-stat-completed" class="qa-runner-metric-val text-green">0</strong>
+                </div>
+                <div class="qa-runner-metric-box">
+                  <span class="qa-runner-metric-label">Remaining</span>
+                  <strong id="runner-stat-remaining" class="qa-runner-metric-val text-blue">0</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Phase List Controls Toolbar -->
+            <div class="qa-runner-controls-bar">
+              <div class="qa-runner-controls-left">
+                <button type="button" id="btn-runner-expand-all" class="btn btn-ghost btn-xs">Expand All</button>
+                <button type="button" id="btn-runner-collapse-all" class="btn btn-ghost btn-xs">Collapse All</button>
+              </div>
+              <div class="qa-runner-controls-right">
+                <button type="button" id="btn-runner-add-phase" class="btn btn-secondary btn-xs" style="display: none;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>Add Phase</span>
+                </button>
+                <button type="button" id="btn-runner-toggle-edit" class="btn btn-secondary btn-xs">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  <span>Edit Checklist</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Expandable Phase Sections -->
+            <div id="runner-phases-container" class="qa-runner-phases-list"></div>
+          </div>
+        </section>
+
         <!-- 1. DASHBOARD VIEW -->
-        <section id="view-dashboard" class="view-section active">
+        <section id="view-dashboard" class="view-section">
           <!-- Welcome Hero Banner -->
           <div class="welcome-banner">
             <div class="welcome-text">
@@ -4109,6 +4578,43 @@
   <!-- 11. Printable QA Report Document Container (Hidden on screen, populated dynamically on print) -->
   <div id="printable-report-container" class="printable-report-container">
     <!-- Built dynamically before window.print() -->
+  </div>
+
+  <!-- 12. Delete Saved QA Checklist Confirmation Modal (Prompt 2) -->
+  <div id="qa-checklist-delete-modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="qa-chk-delete-heading">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <div class="modal-icon icon-red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 id="qa-chk-delete-heading" class="modal-title">Delete QA Checklist</h3>
+            <p class="modal-subtitle">Confirm checklist removal</p>
+          </div>
+        </div>
+        <button type="button" id="qa-chk-delete-close" class="modal-close-btn" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-form">
+        <p class="case-detail-text">
+          Are you sure you want to permanently delete <strong id="qa-chk-delete-name">this checklist</strong>? Other saved checklists and TestPilot projects will not be affected.
+        </p>
+        <div class="modal-footer">
+          <button type="button" id="qa-chk-delete-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="button" id="qa-chk-delete-confirm" class="btn btn-danger">
+            <span>Delete Checklist</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification Container -->

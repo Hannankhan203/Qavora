@@ -6,8 +6,21 @@
  * Prompt 3: Dynamic Test Plans, Phases, Test Suites & Test Cases Controller
  */
 
+import { initChecklistGenerator } from './checklistGeneratorUI.js';
+import { initQARunnerAndChecklists } from './qaRunnerUI.js';
+import {
+  CHECKLISTS_STORAGE_KEY,
+  ACTIVE_RUNNER_STORAGE_KEY,
+  loadAllChecklists,
+  saveAllChecklists,
+  normalizeChecklistRecord,
+  generateStableId
+} from './qaChecklistStore.js';
+
 (function () {
   'use strict';
+
+  let qaRunnerController = null;
 
   // ==========================================================================
   // Storage Keys & Constants
@@ -44,6 +57,18 @@
   ];
 
   const VIEW_TITLES = {
+    'checklist-generator': {
+      title: 'Create a QA Checklist',
+      subtitle: 'Import & structure manual testing plans'
+    },
+    'my-checklists': {
+      title: 'My QA Checklists',
+      subtitle: 'Saved manual QA checklists & progress'
+    },
+    'qa-runner': {
+      title: 'QA Test Runner',
+      subtitle: 'Execute manual verifications with automatic progress saving'
+    },
     dashboard: {
       title: 'Dashboard',
       subtitle: 'Overview & testing health'
@@ -86,7 +111,7 @@
   // Application State
   // ==========================================================================
   const State = {
-    currentView: 'dashboard',
+    currentView: 'checklist-generator',
     currentDetailProjectId: null,
 
     // My Projects Filtering
@@ -389,12 +414,16 @@
       }
     },
 
-    saveRollbackSnapshot(projects, activities) {
+    saveRollbackSnapshot(projects, activities, qaChecklists = null) {
       try {
+        const checklistsToSave = Array.isArray(qaChecklists)
+          ? qaChecklists
+          : loadAllChecklists().checklists;
         sessionStorage.setItem('testpilot_rollback_v1', JSON.stringify({
           timestamp: new Date().toISOString(),
           projects: projects,
-          activities: activities
+          activities: activities,
+          qaChecklists: checklistsToSave
         }));
       } catch (err) {
         console.warn('TestPilot: Unable to write rollback to sessionStorage', err);
@@ -6661,7 +6690,9 @@
       const projRaw = localStorage.getItem(STORAGE_KEYS.PROJECTS) || '';
       const actRaw = localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '';
       const themeRaw = localStorage.getItem(STORAGE_KEYS.THEME) || '';
-      const totalBytes = (projRaw.length + actRaw.length + themeRaw.length) * 2; // UTF-16
+      const qaChkRaw = localStorage.getItem(CHECKLISTS_STORAGE_KEY) || '';
+      const qaRunRaw = localStorage.getItem(ACTIVE_RUNNER_STORAGE_KEY) || '';
+      const totalBytes = (projRaw.length + actRaw.length + themeRaw.length + qaChkRaw.length + qaRunRaw.length) * 2; // UTF-16
       const kb = (totalBytes / 1024).toFixed(1);
       const quotaBytes = 5 * 1024 * 1024; // ~5 MB quota
       const percent = Math.min(100, Math.max(0.1, (totalBytes / quotaBytes) * 100)).toFixed(2);
@@ -6718,7 +6749,9 @@
 
     // 5. Update Rollback card status
     const snapshot = Storage.getRollbackSnapshot();
-    if (snapshot && Array.isArray(snapshot.projects)) {
+    if (snapshot && (Array.isArray(snapshot.projects) || Array.isArray(snapshot.qaChecklists))) {
+      const snapProjectsCnt = Array.isArray(snapshot.projects) ? snapshot.projects.length : 0;
+      const snapChecklistsCnt = Array.isArray(snapshot.qaChecklists) ? snapshot.qaChecklists.length : 0;
       if (DOM.rollbackStatusBadge) {
         DOM.rollbackStatusBadge.textContent = 'Snapshot Available';
         DOM.rollbackStatusBadge.className = 'panel-tag badge-saas';
@@ -6727,7 +6760,8 @@
         DOM.rollbackSnapshotTitle.textContent = `Snapshot created ${formatRelativeTime(snapshot.timestamp)}`;
       }
       if (DOM.rollbackSnapshotMeta) {
-        DOM.rollbackSnapshotMeta.textContent = `${snapshot.projects.length} projects preserved before restore (${formatDisplayDate(snapshot.timestamp)})`;
+        const chkText = snapChecklistsCnt > 0 ? `, ${snapChecklistsCnt} QA checklists` : '';
+        DOM.rollbackSnapshotMeta.textContent = `${snapProjectsCnt} projects${chkText} preserved before restore (${formatDisplayDate(snapshot.timestamp)})`;
       }
       if (DOM.btnExecuteRollback) DOM.btnExecuteRollback.disabled = false;
     } else {
@@ -6783,6 +6817,7 @@
   function exportFullApplicationBackup() {
     const projects = Storage.getProjects();
     const activities = Storage.getActivities();
+    const qaChecklists = loadAllChecklists().checklists;
 
     let totalCases = 0;
     let totalSuites = 0;
@@ -6806,6 +6841,7 @@
       exportedAt: new Date().toISOString(),
       metadata: {
         totalProjects: projects.length,
+        totalQaChecklists: qaChecklists.length,
         totalPlans: totalPlans,
         totalSuites: totalSuites,
         totalCases: totalCases,
@@ -6814,6 +6850,7 @@
         theme: Storage.getTheme()
       },
       projects: projects,
+      qaChecklists: qaChecklists,
       activities: activities
     };
 
@@ -6821,8 +6858,9 @@
     const filename = `TestPilot_Full_Backup_${getISODate()}.json`;
 
     downloadFile(jsonStr, filename, 'application/json');
-    Storage.addActivity('Created Full Backup', `${projects.length} Projects`);
-    showToast(`Complete application backup downloaded (${projects.length} projects)`);
+    const summaryLabel = `${projects.length} Projects, ${qaChecklists.length} QA Checklists`;
+    Storage.addActivity('Created Full Backup', summaryLabel);
+    showToast(`Complete application backup downloaded (${projects.length} projects, ${qaChecklists.length} QA checklists)`);
   }
 
   function exportTestCasesCSV() {
@@ -7421,11 +7459,18 @@
     }
 
     let rawProjects = [];
+    const hasQaChecklistsField = !Array.isArray(data) && Array.isArray(data.qaChecklists);
+    const rawQaChecklists = hasQaChecklistsField
+      ? data.qaChecklists.filter(c => c && typeof c === 'object')
+      : null;
     let payloadType = 'Workspace Payload';
 
     if (Array.isArray(data.projects)) {
       rawProjects = data.projects;
       payloadType = 'Full Application Backup';
+    } else if (hasQaChecklistsField) {
+      rawProjects = [];
+      payloadType = 'QA Checklists Backup';
     } else if (Array.isArray(data)) {
       rawProjects = data;
       payloadType = 'Full Application Backup';
@@ -7436,15 +7481,15 @@
       rawProjects = [data];
       payloadType = 'Individual Project Export';
     } else {
-      showImportValidationAlert('Unrecognized TestPilot data format. Missing required project structure.');
+      showImportValidationAlert('Unrecognized TestPilot data format. Missing required project or QA checklist structure.');
       return;
     }
 
     // Sanitize & validate each candidate project
     rawProjects = rawProjects.filter(p => p && typeof p === 'object' && (p.name || p.id));
 
-    if (rawProjects.length === 0) {
-      showImportValidationAlert('No valid TestPilot project records found in file.');
+    if (rawProjects.length === 0 && (!rawQaChecklists || rawQaChecklists.length === 0)) {
+      showImportValidationAlert('No valid TestPilot project or QA checklist records found in file.');
       return;
     }
 
@@ -7466,6 +7511,21 @@
       if (Array.isArray(p.executions)) execCnt += p.executions.length;
       if (Array.isArray(p.defects)) defectCnt += p.defects.length;
     });
+
+    if (rawQaChecklists && rawQaChecklists.length > 0) {
+      planCnt += rawQaChecklists.length;
+      rawQaChecklists.forEach(chk => {
+        if (Array.isArray(chk.phases)) {
+          chk.phases.forEach(ph => {
+            if (Array.isArray(ph.sections)) {
+              ph.sections.forEach(sec => {
+                if (Array.isArray(sec.tests)) caseCnt += sec.tests.length;
+              });
+            }
+          });
+        }
+      });
+    }
 
     hideImportValidationAlert();
 
@@ -7492,7 +7552,7 @@
     if (DOM.importPreviewDefectsCnt) DOM.importPreviewDefectsCnt.textContent = defectCnt.toString();
 
     if (DOM.importPreviewProjectsList) {
-      DOM.importPreviewProjectsList.innerHTML = rawProjects.map(p => {
+      const projPills = rawProjects.map(p => {
         const cCnt = Array.isArray(p.testSuites)
           ? p.testSuites.reduce((acc, s) => acc + (Array.isArray(s.testCases) ? s.testCases.length : 0), 0)
           : (p.testCaseCount || 0);
@@ -7502,7 +7562,18 @@
             <span style="font-size: 0.65rem; color: var(--text-muted);">(${cCnt} cases)</span>
           </span>
         `;
-      }).join('');
+      });
+      const chkPills = (rawQaChecklists || []).map((chk, idx) => {
+        const normalizedChk = normalizeChecklistRecord(chk, idx);
+        const phaseCnt = normalizedChk ? normalizedChk.phases.length : 0;
+        return `
+          <span class="import-proj-pill">
+            <strong>QA Checklist: ${escapeHTML((normalizedChk && normalizedChk.title) || 'Untitled Checklist')}</strong>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">(${phaseCnt} phases)</span>
+          </span>
+        `;
+      });
+      DOM.importPreviewProjectsList.innerHTML = [...projPills, ...chkPills].join('');
     }
 
     // Default to Merge mode
@@ -7513,6 +7584,7 @@
 
     State.pendingImportPayload = {
       rawProjects: rawProjects,
+      rawQaChecklists: rawQaChecklists,
       payloadType: payloadType,
       activities: Array.isArray(data.activities) ? data.activities : []
     };
@@ -7540,26 +7612,42 @@
 
     const strategy = document.querySelector('input[name="import-mode"]:checked')?.value || 'merge';
     const importedRaw = State.pendingImportPayload.rawProjects;
+    const importedRawChecklists = State.pendingImportPayload.rawQaChecklists;
     const currentProjects = Storage.getProjects();
     const currentActivities = Storage.getActivities();
+    const currentChecklists = loadAllChecklists().checklists;
 
     if (strategy === 'replace') {
-      // 1. Create safety rollback snapshot in sessionStorage
-      Storage.saveRollbackSnapshot(currentProjects, currentActivities);
+      // 1. Create safety rollback snapshot in sessionStorage (preserving both projects and QA checklists)
+      Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
 
       // 2. Persist imported projects through the normalization engine
       Storage.saveProjects(importedRaw);
       const normalized = Storage.getProjects();
       Storage.saveProjects(normalized);
 
-      // 3. Restore activities if provided
+      // 3. Replace QA checklists only when the backup explicitly includes qaChecklists
+      let restoredChkCount = currentChecklists.length;
+      if (Array.isArray(importedRawChecklists)) {
+        const normalizedChks = importedRawChecklists
+          .map((c, idx) => normalizeChecklistRecord(c, idx))
+          .filter(Boolean);
+        saveAllChecklists(normalizedChks);
+        restoredChkCount = normalizedChks.length;
+      }
+
+      // 4. Restore activities if provided
       if (Array.isArray(State.pendingImportPayload.activities) && State.pendingImportPayload.activities.length > 0) {
         Storage.saveActivities(State.pendingImportPayload.activities);
       }
-      Storage.addActivity('Restored Workspace Backup', `${normalized.length} Projects`);
+      const actDetail = Array.isArray(importedRawChecklists)
+        ? `${normalized.length} Projects, ${restoredChkCount} QA Checklists`
+        : `${normalized.length} Projects`;
+      Storage.addActivity('Restored Workspace Backup', actDetail);
 
       closeImportPreviewModal();
-      showToast(`Restored ${normalized.length} projects. Pre-restore rollback snapshot saved.`, 'success');
+      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      showToast(`Restored ${actDetail}. Pre-restore rollback snapshot saved.`, 'success');
       renderDashboard();
       renderDataWorkspace();
     } else {
@@ -7569,26 +7657,53 @@
 
       const processedImported = importedRaw.map((p, idx) => {
         const newProj = { ...p };
-        // Check for duplicate ID
         if (!newProj.id || existingIds.has(newProj.id)) {
           newProj.id = 'proj_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6);
         }
-        // Check for duplicate Name
         if (newProj.name && existingNames.has(newProj.name.trim().toLowerCase())) {
           newProj.name = `${newProj.name} (Imported)`;
         }
         return newProj;
       });
 
-      const merged = [...currentProjects, ...processedImported];
-      Storage.saveProjects(merged);
-      const normalized = Storage.getProjects();
-      Storage.saveProjects(normalized);
+      if (processedImported.length > 0) {
+        const merged = [...currentProjects, ...processedImported];
+        Storage.saveProjects(merged);
+        const normalized = Storage.getProjects();
+        Storage.saveProjects(normalized);
+      }
 
-      Storage.addActivity('Merged Import', `${processedImported.length} Projects`);
+      let mergedChkCount = 0;
+      if (Array.isArray(importedRawChecklists) && importedRawChecklists.length > 0) {
+        const existingChkIds = new Set(currentChecklists.map(c => c.id));
+        const existingChkTitles = new Set(currentChecklists.map(c => (c.title || '').trim().toLowerCase()));
+        const processedChks = importedRawChecklists
+          .map((c, idx) => normalizeChecklistRecord(c, idx))
+          .filter(Boolean)
+          .map(chk => {
+            const copy = { ...chk };
+            if (!copy.id || existingChkIds.has(copy.id)) {
+              copy.id = generateStableId('chk');
+            }
+            existingChkIds.add(copy.id);
+            if (copy.title && existingChkTitles.has(copy.title.trim().toLowerCase())) {
+              copy.title = `${copy.title} (Imported)`;
+            }
+            existingChkTitles.add((copy.title || '').trim().toLowerCase());
+            return copy;
+          });
+        saveAllChecklists([...processedChks, ...currentChecklists]);
+        mergedChkCount = processedChks.length;
+      }
+
+      const mergeSummary = mergedChkCount > 0
+        ? `${processedImported.length} Projects, ${mergedChkCount} QA Checklists`
+        : `${processedImported.length} Projects`;
+      Storage.addActivity('Merged Import', mergeSummary);
 
       closeImportPreviewModal();
-      showToast(`Merged ${processedImported.length} projects into workspace.`, 'success');
+      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      showToast(`Merged ${mergeSummary} into workspace.`, 'success');
       renderDashboard();
       renderDataWorkspace();
     }
@@ -7596,19 +7711,27 @@
 
   function executeRollback() {
     const snapshot = Storage.getRollbackSnapshot();
-    if (!snapshot || !Array.isArray(snapshot.projects)) {
+    if (!snapshot || (!Array.isArray(snapshot.projects) && !Array.isArray(snapshot.qaChecklists))) {
       showToast('No valid recovery snapshot available to roll back to.', 'warning');
       return;
     }
 
-    Storage.saveProjects(snapshot.projects);
+    const restoredProjects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+    Storage.saveProjects(restoredProjects);
+    if (Array.isArray(snapshot.qaChecklists)) {
+      saveAllChecklists(snapshot.qaChecklists);
+    }
     if (Array.isArray(snapshot.activities)) {
       Storage.saveActivities(snapshot.activities);
     }
-    Storage.addActivity('Rolled Back Workspace', `${snapshot.projects.length} Projects Restored`);
+    const chkSuffix = Array.isArray(snapshot.qaChecklists)
+      ? `, ${snapshot.qaChecklists.length} QA Checklists`
+      : '';
+    Storage.addActivity('Rolled Back Workspace', `${restoredProjects.length} Projects${chkSuffix} Restored`);
     Storage.clearRollbackSnapshot();
 
-    showToast(`Workspace rolled back to snapshot (${snapshot.projects.length} projects restored).`, 'info');
+    if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+    showToast(`Workspace rolled back to snapshot (${restoredProjects.length} projects${chkSuffix} restored).`, 'info');
     renderDashboard();
     renderDataWorkspace();
   }
@@ -7630,13 +7753,16 @@
   function executeWorkspaceReset() {
     const currentProjects = Storage.getProjects();
     const currentActivities = Storage.getActivities();
-    Storage.saveRollbackSnapshot(currentProjects, currentActivities);
+    const currentChecklists = loadAllChecklists().checklists;
+    Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
 
     Storage.saveProjects([]);
+    saveAllChecklists([]);
     Storage.clearActivities();
     closeResetConfirmModal();
 
-    showToast('All workspace projects and test data have been permanently cleared.', 'warning');
+    if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+    showToast('All workspace projects, QA checklists, and test data have been cleared.', 'warning');
     renderDashboard();
     renderDataWorkspace();
   }
@@ -7688,6 +7814,21 @@
       renderReportsWorkspace();
     } else if (viewName === 'data') {
       renderDataWorkspace();
+    } else if (viewName === 'checklist-generator') {
+      if (qaRunnerController) {
+        qaRunnerController.recordLastQaView('checklist-generator');
+        qaRunnerController.refreshGlobalBadgesAndBanners();
+      }
+    } else if (viewName === 'my-checklists') {
+      if (qaRunnerController) {
+        qaRunnerController.recordLastQaView('my-checklists');
+        qaRunnerController.renderMyChecklistsView();
+      }
+    } else if (viewName === 'qa-runner') {
+      if (qaRunnerController) {
+        qaRunnerController.recordLastQaView('qa-runner');
+        qaRunnerController.renderRunnerView();
+      }
     }
   }
 
@@ -8482,7 +8623,22 @@
     applyTheme(savedTheme);
 
     bindEvents();
+    qaRunnerController = initQARunnerAndChecklists({
+      navigateTo: (targetView) => switchView(targetView),
+      notify: showToast
+    });
+    initChecklistGenerator({
+      notify: showToast,
+      onChecklistStarted: (newChecklist) => {
+        qaRunnerController.openChecklistInRunner(newChecklist.id);
+      }
+    });
     renderDashboard();
+
+    const restoredQaView = qaRunnerController.getRestoredInitialView();
+    if (restoredQaView) {
+      switchView(restoredQaView);
+    }
   }
 
   if (document.readyState === 'loading') {
