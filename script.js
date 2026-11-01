@@ -8,6 +8,7 @@
 
 import { initChecklistGenerator } from './checklistGeneratorUI.js';
 import { initQARunnerAndChecklists } from './qaRunnerUI.js';
+import { initQAChecklistTransferUI } from './qaChecklistTransferUI.js';
 import {
   CHECKLISTS_STORAGE_KEY,
   ACTIVE_RUNNER_STORAGE_KEY,
@@ -21,6 +22,7 @@ import {
   'use strict';
 
   let qaRunnerController = null;
+  let qaTransferController = null;
 
   // ==========================================================================
   // Storage Keys & Constants
@@ -6778,7 +6780,12 @@ import {
       if (DOM.btnExecuteRollback) DOM.btnExecuteRollback.disabled = true;
     }
 
-    // 6. Ensure active tab is shown
+    // 6. Refresh Transfer Between Devices checklist summary
+    if (qaTransferController) {
+      qaTransferController.refreshTransferWorkspace();
+    }
+
+    // 7. Ensure active tab is shown
     switchDataTab(State.activeDataTab || 'export');
   }
 
@@ -8631,6 +8638,29 @@ import {
       notify: showToast,
       onChecklistStarted: (newChecklist) => {
         qaRunnerController.openChecklistInRunner(newChecklist.id);
+      }
+    });
+    qaTransferController = initQAChecklistTransferUI({
+      notify: showToast,
+      onBeforeReplaceSnapshot: () => {
+        const currentProjects = Storage.getProjects();
+        const currentActivities = Storage.getActivities();
+        const currentChecklists = loadAllChecklists().checklists;
+        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+      },
+      onAfterTransferImport: ({ mode, importedCount }) => {
+        const actionLabel = mode === 'replace'
+          ? 'Transferred Checklists (Replace)'
+          : 'Transferred Checklists (Merge)';
+        Storage.addActivity(actionLabel, `${importedCount} QA Checklists`);
+        if (qaRunnerController) {
+          qaRunnerController.refreshGlobalBadgesAndBanners();
+        }
+        renderDashboard();
+        renderDataWorkspace();
+      },
+      onOpenChecklistsView: () => {
+        switchView('my-checklists');
       }
     });
     renderDashboard();
