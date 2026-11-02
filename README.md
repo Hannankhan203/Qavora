@@ -502,5 +502,5 @@ Source code files in this repository include the **Apache-2.0** SPDX license hea
 
 ## Repository & Links
 
-- **GitHub Repository**: [https://github.com/Hannankhan203/Test-Pilot](https://github.com/Hannankhan203/Test-Pilot)
+- **GitHub Repository**: [https://github.com/Hannankhan203/Qavora](https://github.com/Hannankhan203/Qavora)
 - **Live Demo Application**: [https://hannankhan203.github.io/Qavora/](https://hannankhan203.github.io/Qavora/)
