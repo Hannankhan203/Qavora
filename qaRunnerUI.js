@@ -773,7 +773,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       idInput.type = 'text';
       idInput.className = 'qa-inline-input qa-test-id-input';
       idInput.placeholder = 'ID (opt)';
-      idInput.value = tc.testId || '';
+      idInput.value = tc.testId !== undefined && tc.testId !== null ? String(tc.testId) : '';
       idInput.setAttribute('aria-label', 'Edit Test ID');
       idInput.addEventListener('input', () => {
         const res = updateTestInChecklist(checklist.id, tc.id, { testId: idInput.value });
@@ -786,7 +786,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       const textInput = document.createElement('input');
       textInput.type = 'text';
       textInput.className = 'qa-inline-input qa-test-text-input';
-      textInput.value = tc.text || '';
+      textInput.value = tc.text !== undefined && tc.text !== null ? String(tc.text) : '';
       textInput.setAttribute('aria-label', 'Edit test description');
       textInput.addEventListener('input', () => {
         const trimmed = textInput.value.trim();
@@ -1054,7 +1054,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         lblIn.type = 'text';
         lblIn.className = 'qa-inline-input qa-phase-label-input';
         lblIn.placeholder = 'Phase #';
-        lblIn.value = phase.phaseLabel || '';
+        lblIn.value = phase.phaseLabel !== undefined && phase.phaseLabel !== null ? String(phase.phaseLabel) : '';
         lblIn.addEventListener('input', () => {
           const res = updatePhaseInChecklist(activeChecklist.id, phase.id, { phaseLabel: lblIn.value });
           if (res.ok) {
@@ -1067,7 +1067,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         nameIn.type = 'text';
         nameIn.className = 'qa-inline-input qa-phase-name-input';
         nameIn.placeholder = 'Phase name';
-        nameIn.value = phase.name || '';
+        nameIn.value = phase.name !== undefined && phase.name !== null ? String(phase.name) : '';
         nameIn.addEventListener('input', () => {
           const trimmed = nameIn.value.trim();
           if (!trimmed) return;
@@ -1191,7 +1191,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
           descArea.className = 'qa-inline-textarea';
           descArea.rows = 1;
           descArea.placeholder = 'Optional phase description...';
-          descArea.value = phase.description || '';
+          descArea.value = phase.description !== undefined && phase.description !== null ? String(phase.description) : '';
           descArea.addEventListener('input', () => {
             const res = updatePhaseInChecklist(activeChecklist.id, phase.id, { description: descArea.value });
             if (res.ok) {
@@ -1235,7 +1235,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
               const noteIn = document.createElement('input');
               noteIn.type = 'text';
               noteIn.className = 'qa-inline-input qa-note-input';
-              noteIn.value = n.text || '';
+              noteIn.value = n.text !== undefined && n.text !== null ? String(n.text) : '';
               noteIn.setAttribute('aria-label', 'Edit phase note');
               noteIn.addEventListener('input', () => {
                 n.text = noteIn.value;

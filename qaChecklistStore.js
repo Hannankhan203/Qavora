@@ -78,9 +78,15 @@ function getStorageBackend() {
 
 function normalizeTestRecord(rawTest) {
   if (!rawTest || typeof rawTest !== 'object') return null;
-  const text = typeof rawTest.text === 'string' ? rawTest.text.trim() : '';
-  const testId = typeof rawTest.testId === 'string' ? rawTest.testId.trim() : '';
-  const priority = typeof rawTest.priority === 'string' ? rawTest.priority.trim() : '';
+  const text = typeof rawTest.text === 'string'
+    ? rawTest.text.trim()
+    : (rawTest.text !== undefined && rawTest.text !== null ? String(rawTest.text).trim() : '');
+  const testId = typeof rawTest.testId === 'string'
+    ? rawTest.testId.trim()
+    : (rawTest.testId !== undefined && rawTest.testId !== null ? String(rawTest.testId).trim() : '');
+  const priority = typeof rawTest.priority === 'string'
+    ? rawTest.priority.trim()
+    : (rawTest.priority !== undefined && rawTest.priority !== null ? String(rawTest.priority).trim() : '');
 
   const rawStatusStr = typeof rawTest.status === 'string' ? rawTest.status.trim() : '';
   const isRecognizedStatus =
@@ -95,7 +101,7 @@ function normalizeTestRecord(rawTest) {
     id: typeof rawTest.id === 'string' && rawTest.id.trim() ? rawTest.id.trim() : generateStableId('test'),
     testId,
     priority,
-    text: text || 'Untitled test item',
+    text: text !== '' ? text : 'Untitled test item',
     status: isCompleted ? TEST_STATUS.COMPLETED : TEST_STATUS.NOT_STARTED,
     completed: isCompleted
   };
@@ -103,7 +109,9 @@ function normalizeTestRecord(rawTest) {
 
 function normalizeNoteRecord(rawNote) {
   if (!rawNote || typeof rawNote !== 'object') return null;
-  const text = typeof rawNote.text === 'string' ? rawNote.text.trim() : '';
+  const text = typeof rawNote.text === 'string'
+    ? rawNote.text.trim()
+    : (rawNote.text !== undefined && rawNote.text !== null ? String(rawNote.text).trim() : '');
   if (!text) return null;
   const validKinds = ['environment', 'instruction', 'note'];
   return {
@@ -117,7 +125,11 @@ function normalizeSectionRecord(rawSec) {
   if (!rawSec || typeof rawSec !== 'object') return null;
   const type = rawSec.type === 'category' ? 'category' : 'direct';
   const name = type === 'category'
-    ? (typeof rawSec.name === 'string' && rawSec.name.trim() ? rawSec.name.trim() : 'Category')
+    ? (typeof rawSec.name === 'string' && rawSec.name.trim()
+        ? rawSec.name.trim()
+        : (rawSec.name !== undefined && rawSec.name !== null && String(rawSec.name).trim() !== ''
+            ? String(rawSec.name).trim()
+            : 'Category'))
     : '';
 
   const notes = Array.isArray(rawSec.notes)
@@ -148,8 +160,13 @@ function normalizeSectionRecord(rawSec) {
 }
 
 export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
-  const lbl = typeof phaseLabel === 'string' ? phaseLabel.trim() : '';
-  if (!lbl) return '';
+  const lbl = typeof phaseLabel === 'string'
+    ? phaseLabel.trim()
+    : (phaseLabel !== undefined && phaseLabel !== null ? String(phaseLabel).trim() : '');
+  const fallbackStr = typeof fallbackNumber === 'string'
+    ? fallbackNumber.trim()
+    : (typeof fallbackNumber === 'number' ? String(fallbackNumber) : '');
+  if (!lbl) return fallbackStr;
   const cleaned = lbl.replace(/[:—–\-.]+$/, '').trim();
   const tokenMatch =
     cleaned.match(/(?:#|\s)([0-9]+(?:\.[0-9]+)*|[A-Za-z0-9]+)$/) ||
@@ -157,19 +174,11 @@ export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
   if (tokenMatch) {
     const token = tokenMatch[1].trim();
     if (['phase', 'stage', 'testing', 'qa', 'unknown'].includes(token.toLowerCase())) {
-      return typeof fallbackNumber === 'string'
-        ? fallbackNumber.trim()
-        : typeof fallbackNumber === 'number'
-        ? String(fallbackNumber)
-        : '';
+      return fallbackStr;
     }
     return token;
   }
-  return typeof fallbackNumber === 'string'
-    ? fallbackNumber.trim()
-    : typeof fallbackNumber === 'number'
-    ? String(fallbackNumber)
-    : '';
+  return fallbackStr;
 }
 
 export function parsePhaseNumber(val) {
@@ -196,13 +205,13 @@ export function comparePhaseNumbers(numA, numB) {
     if (valA !== valB) {
       return valA - valB;
     }
-    return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+    return String(numA ?? '').localeCompare(String(numB ?? ''), undefined, { numeric: true, sensitivity: 'base' });
   }
 
   if (valA !== null && valB === null) return -1;
   if (valA === null && valB !== null) return 1;
 
-  return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+  return String(numA ?? '').localeCompare(String(numB ?? ''), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export function comparePhases(phaseA, phaseB) {
@@ -214,16 +223,20 @@ export function comparePhases(phaseA, phaseB) {
     return phaseA.order - phaseB.order;
   }
 
-  const numA = phaseA.phaseNumber || (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
-  const numB = phaseB.phaseNumber || (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
+  const numA = (phaseA.phaseNumber !== undefined && phaseA.phaseNumber !== null && phaseA.phaseNumber !== '')
+    ? String(phaseA.phaseNumber)
+    : (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
+  const numB = (phaseB.phaseNumber !== undefined && phaseB.phaseNumber !== null && phaseB.phaseNumber !== '')
+    ? String(phaseB.phaseNumber)
+    : (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
 
-  if (numA || numB) {
+  if ((numA !== '' && numA !== undefined && numA !== null) || (numB !== '' && numB !== undefined && numB !== null)) {
     const comp = comparePhaseNumbers(numA, numB);
     if (comp !== 0) return comp;
   }
 
-  const nameA = phaseA.name || '';
-  const nameB = phaseB.name || '';
+  const nameA = phaseA.name !== undefined && phaseA.name !== null ? String(phaseA.name) : '';
+  const nameB = phaseB.name !== undefined && phaseB.name !== null ? String(phaseB.name) : '';
   return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
@@ -235,12 +248,16 @@ export function sortPhases(phases) {
 function normalizePhaseRecord(rawPhase, idx = 0) {
   if (!rawPhase || typeof rawPhase !== 'object') return null;
 
-  const phaseLabel = typeof rawPhase.phaseLabel === 'string' ? rawPhase.phaseLabel.trim() : '';
-  const rawPhaseNumber = typeof rawPhase.phaseNumber === 'string' ? rawPhase.phaseNumber.trim() : '';
+  const phaseLabel = typeof rawPhase.phaseLabel === 'string'
+    ? rawPhase.phaseLabel.trim()
+    : (rawPhase.phaseLabel !== undefined && rawPhase.phaseLabel !== null ? String(rawPhase.phaseLabel).trim() : '');
+  const rawPhaseNumber = typeof rawPhase.phaseNumber === 'string'
+    ? rawPhase.phaseNumber.trim()
+    : (typeof rawPhase.phaseNumber === 'number' ? String(rawPhase.phaseNumber) : '');
   const phaseNumber = phaseLabel ? derivePhaseNumberFromLabel(phaseLabel, rawPhaseNumber) : rawPhaseNumber;
   const name =
-    typeof rawPhase.name === 'string' && rawPhase.name.trim()
-      ? rawPhase.name.trim()
+    rawPhase.name !== undefined && rawPhase.name !== null && String(rawPhase.name).trim()
+      ? String(rawPhase.name).trim()
       : `Phase ${idx + 1}`;
   const description = typeof rawPhase.description === 'string' ? rawPhase.description.trim() : '';
 
@@ -289,8 +306,8 @@ export function normalizeChecklistRecord(rawChecklist) {
       : createdAt;
 
   const title =
-    typeof rawChecklist.title === 'string' && rawChecklist.title.trim()
-      ? rawChecklist.title.trim()
+    rawChecklist.title !== undefined && rawChecklist.title !== null && String(rawChecklist.title).trim()
+      ? String(rawChecklist.title).trim()
       : 'Untitled QA Checklist';
 
   const documentNotes = Array.isArray(rawChecklist.documentNotes)
@@ -428,14 +445,19 @@ export function calculateChecklistProgress(checklist) {
 // ============================================================================
 
 export function deriveDefaultChecklistTitle(parsedPlan) {
-  if (parsedPlan && typeof parsedPlan.documentTitle === 'string' && parsedPlan.documentTitle.trim()) {
-    return parsedPlan.documentTitle.trim();
+  if (parsedPlan) {
+    if (parsedPlan.documentTitle !== undefined && parsedPlan.documentTitle !== null && String(parsedPlan.documentTitle).trim() !== '') {
+      return String(parsedPlan.documentTitle).trim();
+    }
+    if (parsedPlan.title !== undefined && parsedPlan.title !== null && String(parsedPlan.title).trim() !== '') {
+      return String(parsedPlan.title).trim();
+    }
   }
 
   if (parsedPlan && Array.isArray(parsedPlan.phases) && parsedPlan.phases.length > 0) {
-    const firstNamed = parsedPlan.phases.find(p => !p.isImplicit && p.name && p.name.trim());
+    const firstNamed = parsedPlan.phases.find(p => !p.isImplicit && p.name !== undefined && p.name !== null && String(p.name).trim() !== '');
     if (firstNamed) {
-      const cleanName = firstNamed.name.trim();
+      const cleanName = String(firstNamed.name).trim();
       if (parsedPlan.phases.length === 1) {
         return `${cleanName} QA Checklist`;
       }
@@ -621,12 +643,12 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
     const cleanedSections = (Array.isArray(ph.sections) ? ph.sections : [])
       .map(sec => {
         const validTests = (Array.isArray(sec.tests) ? sec.tests : [])
-          .filter(t => t && typeof t.text === 'string' && t.text.trim().length > 0)
+          .filter(t => t && (typeof t.text === 'string' ? t.text.trim().length > 0 : (t.text !== undefined && t.text !== null && String(t.text).trim().length > 0)))
           .map(t => ({
             id: generateStableId('test'),
-            testId: typeof t.testId === 'string' ? t.testId.trim() : '',
-            priority: typeof t.priority === 'string' ? t.priority.trim() : '',
-            text: t.text.trim(),
+            testId: typeof t.testId === 'string' ? t.testId.trim() : (t.testId !== undefined && t.testId !== null ? String(t.testId).trim() : ''),
+            priority: typeof t.priority === 'string' ? t.priority.trim() : (t.priority !== undefined && t.priority !== null ? String(t.priority).trim() : ''),
+            text: String(t.text).trim(),
             status: TEST_STATUS.NOT_STARTED,
             completed: false
           }));
@@ -634,14 +656,14 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
         return {
           id: generateStableId('sec'),
           type: sec.type === 'category' ? 'category' : 'direct',
-          name: sec.type === 'category' ? (sec.name || 'Category').trim() : '',
+          name: sec.type === 'category' ? ((sec.name !== undefined && sec.name !== null && String(sec.name).trim() !== '') ? String(sec.name).trim() : 'Category') : '',
           notes: Array.isArray(sec.notes)
             ? sec.notes
-                .filter(n => n && typeof n.text === 'string' && n.text.trim())
+                .filter(n => n && (typeof n.text === 'string' ? n.text.trim() : (n.text !== undefined && n.text !== null && String(n.text).trim())))
                 .map(n => ({
                   id: generateStableId('note'),
                   kind: n.kind || 'note',
-                  text: n.text.trim()
+                  text: String(n.text).trim()
                 }))
             : [],
           tests: validTests
@@ -649,14 +671,18 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
       })
       .filter(sec => sec.type === 'category' || sec.tests.length > 0 || sec.notes.length > 0);
 
-    const cleanedLabel = typeof ph.phaseLabel === 'string' ? ph.phaseLabel.trim() : '';
-    const cleanedNum = typeof ph.phaseNumber === 'string' ? ph.phaseNumber.trim() : '';
+    const cleanedLabel = typeof ph.phaseLabel === 'string'
+      ? ph.phaseLabel.trim()
+      : (ph.phaseLabel !== undefined && ph.phaseLabel !== null ? String(ph.phaseLabel).trim() : '');
+    const cleanedNum = typeof ph.phaseNumber === 'string'
+      ? ph.phaseNumber.trim()
+      : (typeof ph.phaseNumber === 'number' ? String(ph.phaseNumber) : '');
 
     return {
       id: generateStableId('phase'),
       phaseLabel: cleanedLabel,
-      phaseNumber: cleanedLabel ? derivePhaseNumberFromLabel(cleanedLabel, cleanedNum) : (cleanedNum || ''),
-      name: typeof ph.name === 'string' && ph.name.trim() ? ph.name.trim() : `Phase ${pIdx + 1}`,
+      phaseNumber: cleanedLabel ? derivePhaseNumberFromLabel(cleanedLabel, cleanedNum) : (cleanedNum !== '' ? cleanedNum : ''),
+      name: (ph.name !== undefined && ph.name !== null && String(ph.name).trim()) ? String(ph.name).trim() : `Phase ${pIdx + 1}`,
       isImplicit: Boolean(ph.isImplicit),
       description: typeof ph.description === 'string' ? ph.description.trim() : '',
       expanded: true,
@@ -688,8 +714,8 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
 
   const nowIso = new Date().toISOString();
   const resolvedTitle =
-    typeof customTitle === 'string' && customTitle.trim()
-      ? customTitle.trim()
+    (customTitle !== undefined && customTitle !== null && String(customTitle).trim() !== '')
+      ? String(customTitle).trim()
       : deriveDefaultChecklistTitle(parsedPlan);
 
   const newChecklist = normalizeChecklistRecord({
@@ -862,8 +888,8 @@ export function updatePhaseInChecklist(checklistId, phaseId, updates = {}) {
   return mutateChecklistById(checklistId, checklist => {
     const phase = checklist.phases.find(p => p.id === phaseId);
     if (!phase) return false;
-    if (typeof updates.phaseLabel === 'string') {
-      phase.phaseLabel = updates.phaseLabel.trim();
+    if (typeof updates.phaseLabel === 'string' || typeof updates.phaseLabel === 'number') {
+      phase.phaseLabel = String(updates.phaseLabel).trim();
       phase.phaseNumber = phase.phaseLabel
         ? derivePhaseNumberFromLabel(phase.phaseLabel, phase.phaseNumber)
         : '';
@@ -872,9 +898,12 @@ export function updatePhaseInChecklist(checklistId, phaseId, updates = {}) {
     if (typeof updates.phaseNumber === 'string') {
       phase.phaseNumber = updates.phaseNumber.trim();
       phase.isImplicit = false;
+    } else if (typeof updates.phaseNumber === 'number') {
+      phase.phaseNumber = String(updates.phaseNumber);
+      phase.isImplicit = false;
     }
-    if (typeof updates.name === 'string') {
-      const trimmedName = updates.name.trim();
+    if (typeof updates.name === 'string' || typeof updates.name === 'number') {
+      const trimmedName = String(updates.name).trim();
       if (trimmedName) {
         phase.name = trimmedName;
         phase.isImplicit = false;

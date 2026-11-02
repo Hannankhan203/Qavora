@@ -189,23 +189,23 @@ import {
     const s = val.trim().toLowerCase();
     if (!s) return null;
 
-    // Critical mappings: Critical, Blocker, P0, Sev0, etc.
-    if (s === 'critical' || s === 'blocker' || s === 'p0' || s === 'sev0' || s === 'sev-0' || s === 'prio0' || s === 'priority 0' || s === 'fatal') {
+    // Critical mappings: Critical, Blocker, P0, Sev0, 0, etc.
+    if (s === 'critical' || s === 'blocker' || s === 'p0' || s === 'sev0' || s === 'sev-0' || s === 'prio0' || s === 'priority 0' || s === 'fatal' || s === '0') {
       return 'Critical';
     }
 
-    // High mappings: High, Urgent, P1, Sev1, etc.
-    if (s === 'high' || s === 'urgent' || s === 'p1' || s === 'sev1' || s === 'sev-1' || s === 'prio1' || s === 'priority 1' || s === 'major') {
+    // High mappings: High, Urgent, P1, Sev1, 1, etc.
+    if (s === 'high' || s === 'urgent' || s === 'p1' || s === 'sev1' || s === 'sev-1' || s === 'prio1' || s === 'priority 1' || s === 'major' || s === '1') {
       return 'High';
     }
 
-    // Medium mappings: Medium, Normal, Moderate, P2, Sev2, etc.
-    if (s === 'medium' || s === 'normal' || s === 'moderate' || s === 'p2' || s === 'sev2' || s === 'sev-2' || s === 'prio2' || s === 'priority 2' || s === 'med') {
+    // Medium mappings: Medium, Normal, Moderate, P2, Sev2, 2, etc.
+    if (s === 'medium' || s === 'normal' || s === 'moderate' || s === 'p2' || s === 'sev2' || s === 'sev-2' || s === 'prio2' || s === 'priority 2' || s === 'med' || s === '2') {
       return 'Medium';
     }
 
-    // Low mappings: Low, Minor, Trivial, P3, P4, Sev3, Sev4, etc.
-    if (s === 'low' || s === 'minor' || s === 'trivial' || s === 'p3' || s === 'p4' || s === 'sev3' || s === 'sev-3' || s === 'sev4' || s === 'sev-4' || s === 'prio3' || s === 'prio4' || s === 'priority 3' || s === 'priority 4') {
+    // Low mappings: Low, Minor, Trivial, P3, P4, Sev3, Sev4, 3, 4, etc.
+    if (s === 'low' || s === 'minor' || s === 'trivial' || s === 'p3' || s === 'p4' || s === 'sev3' || s === 'sev-3' || s === 'sev4' || s === 'sev-4' || s === 'prio3' || s === 'prio4' || s === 'priority 3' || s === 'priority 4' || s === '3' || s === '4') {
       return 'Low';
     }
 
@@ -263,7 +263,8 @@ import {
           const rawPlan = p.testPlan || {};
           const planPhases = Array.isArray(rawPlan.phases) ? rawPlan.phases.map((ph, phIdx) => ({
             id: ph.id || ('phase_' + Date.now() + '_' + phIdx),
-            name: ph.name || 'Phase ' + (phIdx + 1),
+            name: (ph.name !== undefined && ph.name !== null && String(ph.name).trim() !== '') ? String(ph.name).trim() : 'Phase ' + (phIdx + 1),
+            phaseNumber: (ph.phaseNumber !== undefined && ph.phaseNumber !== null && String(ph.phaseNumber).trim() !== '') ? String(ph.phaseNumber).trim() : '',
             description: typeof ph.description === 'string' ? ph.description.trim() : '',
             order: typeof ph.order === 'number' ? ph.order : phIdx
           })) : [];
@@ -288,7 +289,7 @@ import {
               const steps = rawSteps.map((st, stIdx) => ({
                 id: st.id || ('step_' + Date.now() + '_' + stIdx),
                 action: typeof st.action === 'string' ? st.action.trim() : '',
-                testData: typeof st.testData === 'string' ? st.testData.trim() : '',
+                testData: typeof st.testData === 'string' ? st.testData.trim() : (typeof st.testData === 'number' ? String(st.testData) : ''),
                 order: typeof st.order === 'number' ? st.order : stIdx
               }));
 
@@ -400,7 +401,7 @@ import {
             name: p.name || 'Untitled Project',
             type: VALID_PROJECT_TYPES.includes(p.type) ? p.type : 'Other',
             status: VALID_STATUSES.includes(p.status) ? p.status : 'Active',
-            version: typeof p.version === 'string' ? p.version.trim() : '',
+            version: typeof p.version === 'string' ? p.version.trim() : (typeof p.version === 'number' ? String(p.version) : ''),
             description: typeof p.description === 'string' ? p.description.trim() : '',
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -1651,8 +1652,9 @@ import {
       const progressPercent = casesCount > 0 ? Math.round((executed / casesCount) * 100) : 0;
       const passRate = executed > 0 ? Math.round((passedCount / executed) * 100) : 0;
 
-      const versionBadge = proj.version
-        ? `<span class="version-tag">${escapeHTML(proj.version)}</span>`
+      const hasVersion = proj.version !== undefined && proj.version !== null && String(proj.version).trim() !== '';
+      const versionBadge = hasVersion
+        ? `<span class="version-tag">${escapeHTML(String(proj.version))}</span>`
         : '';
 
       html += `
@@ -1825,9 +1827,10 @@ import {
       DOM.detailTypeBadge.textContent = project.type;
     }
 
+    const hasProjectVersion = project.version !== undefined && project.version !== null && String(project.version).trim() !== '';
     if (DOM.detailVersionBadge) {
-      if (project.version) {
-        DOM.detailVersionBadge.textContent = project.version;
+      if (hasProjectVersion) {
+        DOM.detailVersionBadge.textContent = String(project.version);
         DOM.detailVersionBadge.style.display = 'inline-block';
       } else {
         DOM.detailVersionBadge.style.display = 'none';
@@ -1836,7 +1839,7 @@ import {
 
     if (DOM.detailMetaType) DOM.detailMetaType.textContent = project.type;
     if (DOM.detailMetaStatus) DOM.detailMetaStatus.textContent = project.status;
-    if (DOM.detailMetaVersion) DOM.detailMetaVersion.textContent = project.version || 'Not specified';
+    if (DOM.detailMetaVersion) DOM.detailMetaVersion.textContent = hasProjectVersion ? String(project.version) : 'Not specified';
     if (DOM.detailMetaCreated) DOM.detailMetaCreated.textContent = formatDisplayDateTime(project.createdAt);
     if (DOM.detailMetaUpdated) DOM.detailMetaUpdated.textContent = formatDisplayDateTime(project.updatedAt);
 
@@ -1849,8 +1852,8 @@ import {
     const blockedCount = Number(project.blockedTests) || 0;
     const skippedCount = Number(project.skippedTests) || 0;
     const totalExecuted = Number(project.executedTests) || (passedCount + failedCount + blockedCount + skippedCount);
-    const notRunCount = Number(project.notRunTests) || Math.max(0, casesCount - totalExecuted);
-    const progressPercent = Number(project.completionRate) || (casesCount > 0 ? Math.round((totalExecuted / casesCount) * 100) : 0);
+    const notRunCount = Number.isFinite(Number(project.notRunTests)) ? Number(project.notRunTests) : Math.max(0, casesCount - totalExecuted);
+    const progressPercent = Number.isFinite(Number(project.completionRate)) ? Number(project.completionRate) : (casesCount > 0 ? Math.round((totalExecuted / casesCount) * 100) : 0);
 
     if (DOM.detailStatPhases) DOM.detailStatPhases.textContent = phases.length.toString();
     if (DOM.detailStatSuites) DOM.detailStatSuites.textContent = suites.length.toString();
@@ -2136,7 +2139,9 @@ import {
       if (orderA !== null && orderB !== null && !Number.isNaN(orderA) && !Number.isNaN(orderB) && orderA !== orderB) {
         return orderA - orderB;
       }
-      return comparePhaseNumbers(a.phaseNumber || a.name || '', b.phaseNumber || b.name || '');
+      const phaseNumA = (a.phaseNumber !== undefined && a.phaseNumber !== null && a.phaseNumber !== '') ? a.phaseNumber : (a.name ?? '');
+      const phaseNumB = (b.phaseNumber !== undefined && b.phaseNumber !== null && b.phaseNumber !== '') ? b.phaseNumber : (b.name ?? '');
+      return comparePhaseNumbers(phaseNumA, phaseNumB);
     });
 
     let html = '';
@@ -3054,7 +3059,11 @@ import {
 
       // Initialize Dynamic Steps
       State.modalSteps = Array.isArray(tc.steps) && tc.steps.length > 0
-        ? tc.steps.map(st => ({ id: st.id, action: st.action, testData: st.testData || '' }))
+        ? tc.steps.map(st => ({
+            id: st.id,
+            action: st.action,
+            testData: (st.testData !== undefined && st.testData !== null) ? String(st.testData) : ''
+          }))
         : [{ id: 'step_init_1', action: '', testData: '' }];
 
       if (DOM.caseModalTitle) DOM.caseModalTitle.textContent = `Edit Test Case (${tc.id})`;
@@ -3244,7 +3253,7 @@ import {
       .map((st, idx) => ({
         id: st.id || ('step_' + Date.now() + '_' + idx),
         action: (st.action || '').trim(),
-        testData: (st.testData || '').trim(),
+        testData: (st.testData !== undefined && st.testData !== null ? String(st.testData) : '').trim(),
         order: idx
       }))
       .filter(st => st.action.length > 0);
@@ -3458,7 +3467,7 @@ import {
             <tr>
               <td style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-primary);">${idx + 1}</td>
               <td style="color: var(--text-primary); line-height: 1.45;">${escapeHTML(st.action)}</td>
-              <td style="font-family: var(--font-mono); color: var(--text-secondary); font-size: 0.78rem;">${st.testData ? escapeHTML(st.testData) : '<em style="color: var(--text-muted); font-family: var(--font-sans);">None</em>'}</td>
+              <td style="font-family: var(--font-mono); color: var(--text-secondary); font-size: 0.78rem;">${(st.testData !== undefined && st.testData !== null && String(st.testData).trim() !== '') ? escapeHTML(String(st.testData)) : '<em style="color: var(--text-muted); font-family: var(--font-sans);">None</em>'}</td>
             </tr>
           `;
         });
@@ -3538,7 +3547,7 @@ import {
     // Populate Project Select Dropdown
     if (DOM.execProjectSelect) {
       DOM.execProjectSelect.innerHTML = projects.map(p =>
-        `<option value="${escapeHTML(p.id)}" ${p.id === State.activeExecProjectId ? 'selected' : ''}>${escapeHTML(p.name)} (${p.testCaseCount || 0} cases)</option>`
+        `<option value="${escapeHTML(p.id)}" ${p.id === State.activeExecProjectId ? 'selected' : ''}>${escapeHTML(p.name)} (${p.testCaseCount ?? 0} cases)</option>`
       ).join('');
     }
 
@@ -3592,7 +3601,7 @@ import {
     const failedCount = Number(project.failedTests) || 0;
     const blockedCount = Number(project.blockedTests) || 0;
     const skippedCount = Number(project.skippedTests) || 0;
-    const notRunCount = Number(project.notRunTests) || Math.max(0, totalCases - (passedCount + failedCount + blockedCount + skippedCount));
+    const notRunCount = Number.isFinite(Number(project.notRunTests)) ? Number(project.notRunTests) : Math.max(0, totalCases - (passedCount + failedCount + blockedCount + skippedCount));
     const executedCount = passedCount + failedCount + blockedCount + skippedCount;
     const completionRate = totalCases > 0 ? Math.round((executedCount / totalCases) * 100) : 0;
     const passRate = executedCount > 0 ? Math.round((passedCount / executedCount) * 100) : 0;
@@ -3914,7 +3923,7 @@ import {
     // Presets for tester, environment, build
     if (DOM.execTesterInput) DOM.execTesterInput.value = State.cachedTesterName || '';
     if (DOM.execEnvInput) DOM.execEnvInput.value = 'Staging';
-    if (DOM.execBuildInput) DOM.execBuildInput.value = project.version || '';
+    if (DOM.execBuildInput) DOM.execBuildInput.value = (project.version !== undefined && project.version !== null) ? String(project.version) : '';
 
     // Step Runner State Initialization
     const rawSteps = Array.isArray(targetCase.steps) ? targetCase.steps : [];
@@ -3925,7 +3934,7 @@ import {
       steps: rawSteps.map((st, idx) => ({
         stepId: st.id || ('st_' + idx),
         action: st.action || '',
-        testData: st.testData || '',
+        testData: (st.testData !== undefined && st.testData !== null) ? String(st.testData) : '',
         status: 'untested', // 'completed' | 'failed' | 'untested'
         note: ''
       }))
@@ -3938,7 +3947,10 @@ import {
     if (DOM.execDefectTitle) DOM.execDefectTitle.value = `[Defect] ${targetCase.title}`;
     if (DOM.execDefectSeverity) DOM.execDefectSeverity.value = targetCase.priority || 'High';
     if (DOM.execDefectSteps) {
-      const stepsText = rawSteps.map((st, idx) => `${idx + 1}. ${st.action}${st.testData ? ' (Data: ' + st.testData + ')' : ''}`).join('\n');
+      const stepsText = rawSteps.map((st, idx) => {
+        const hasData = st.testData !== undefined && st.testData !== null && String(st.testData).trim() !== '';
+        return `${idx + 1}. ${st.action}${hasData ? ' (Data: ' + st.testData + ')' : ''}`;
+      }).join('\n');
       DOM.execDefectSteps.value = stepsText;
     }
     if (DOM.execDefectUrl) DOM.execDefectUrl.value = '';
@@ -4008,8 +4020,9 @@ import {
           ? 'step-failed'
           : '';
 
-      const dataSnippet = st.testData
-        ? `<span class="exec-step-data">Input / Data: <code>${escapeHTML(st.testData)}</code></span>`
+      const hasData = st.testData !== undefined && st.testData !== null && String(st.testData).trim() !== '';
+      const dataSnippet = hasData
+        ? `<span class="exec-step-data">Input / Data: <code>${escapeHTML(String(st.testData))}</code></span>`
         : '';
 
       html += `
@@ -4486,7 +4499,7 @@ import {
     if (DOM.defectsProjectSelect) {
       let optHtml = '<option value="ALL">All Projects (Combined)</option>';
       projects.forEach(p => {
-        optHtml += `<option value="${escapeHTML(p.id)}" ${State.activeDefectsProjectId === p.id ? 'selected' : ''}>${escapeHTML(p.name)} (${p.totalDefects || 0} defects)</option>`;
+        optHtml += `<option value="${escapeHTML(p.id)}" ${State.activeDefectsProjectId === p.id ? 'selected' : ''}>${escapeHTML(p.name)} (${p.totalDefects ?? 0} defects)</option>`;
       });
       DOM.defectsProjectSelect.innerHTML = optHtml;
     }
@@ -4643,8 +4656,9 @@ import {
       const displaySeverity = prioCategory || df.priority || df.severity || 'Unassigned';
       const statusClass = getDefectStatusBadgeClass(df.status);
 
-      const linkedTestHtml = df.testCaseId
-        ? `<span class="case-id-tag btn-inspect-linked-test" data-project-id="${escapeHTML(df.projectId)}" data-case-id="${escapeHTML(df.testCaseId)}" style="cursor: pointer;" title="Inspect linked test case ${escapeHTML(df.testCaseId)}">${escapeHTML(df.testCaseId)}</span>`
+      const hasLinkedTest = df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '';
+      const linkedTestHtml = hasLinkedTest
+        ? `<span class="case-id-tag btn-inspect-linked-test" data-project-id="${escapeHTML(df.projectId)}" data-case-id="${escapeHTML(String(df.testCaseId))}" style="cursor: pointer;" title="Inspect linked test case ${escapeHTML(String(df.testCaseId))}">${escapeHTML(String(df.testCaseId))}</span>`
         : `<span style="color: var(--text-muted); font-size: 0.76rem;">Independent</span>`;
 
       const safeExternalUrl = sanitizeExternalUrl(df.externalIssueUrl);
@@ -5365,7 +5379,7 @@ import {
       if (DOM.projectNameInput) DOM.projectNameInput.value = project.name;
       if (DOM.projectTypeInput) DOM.projectTypeInput.value = project.type;
       if (DOM.projectStatusInput) DOM.projectStatusInput.value = project.status || 'Active';
-      if (DOM.projectVersionInput) DOM.projectVersionInput.value = project.version || '';
+      if (DOM.projectVersionInput) DOM.projectVersionInput.value = (project.version !== undefined && project.version !== null) ? String(project.version) : '';
       if (DOM.projectDescInput) DOM.projectDescInput.value = project.description || '';
 
       if (DOM.modalTitle) DOM.modalTitle.textContent = 'Edit Project';
@@ -5737,7 +5751,8 @@ import {
     if (DOM.reportsProjectSelect) {
       let optionsHtml = '<option value="ALL">All Projects (Combined)</option>';
       projects.forEach(p => {
-        optionsHtml += `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${p.version || p.type})</option>`;
+        const hasVer = p.version !== undefined && p.version !== null && String(p.version).trim() !== '';
+        optionsHtml += `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${hasVer ? escapeHTML(String(p.version)) : escapeHTML(p.type)})</option>`;
       });
       DOM.reportsProjectSelect.innerHTML = optionsHtml;
       DOM.reportsProjectSelect.value = State.reportsProjectId || 'ALL';
@@ -7135,7 +7150,10 @@ import {
           if (Array.isArray(s.testCases)) {
             s.testCases.forEach(tc => {
               const stepsStr = (tc.steps && tc.steps.length)
-                ? tc.steps.map((st, i) => `${i + 1}. ${st.action || ''}${st.testData ? ' (Data: ' + st.testData + ')' : ''}`).join('\n')
+                ? tc.steps.map((st, i) => {
+                    const hasData = st.testData !== undefined && st.testData !== null && String(st.testData).trim() !== '';
+                    return `${i + 1}. ${st.action || ''}${hasData ? ' (Data: ' + st.testData + ')' : ''}`;
+                  }).join('\n')
                 : '';
               const tagsStr = Array.isArray(tc.tags) ? tc.tags.join(', ') : '';
 
@@ -7209,16 +7227,16 @@ import {
         p.executions.forEach(ex => {
           rows.push([
             p.name,
-            ex.testCaseId || '',
+            (ex.testCaseId !== undefined && ex.testCaseId !== null) ? String(ex.testCaseId) : '',
             ex.testCaseTitle || '',
             ex.id || '',
             ex.status || 'Pass',
-            ex.actualResult || '',
-            ex.notes || '',
+            (ex.actualResult !== undefined && ex.actualResult !== null) ? String(ex.actualResult) : '',
+            (ex.notes !== undefined && ex.notes !== null) ? String(ex.notes) : '',
             ex.tester || 'Anonymous Tester',
             ex.environment || '',
             ex.browserDevice || '',
-            ex.buildVersion || '',
+            (ex.buildVersion !== undefined && ex.buildVersion !== null) ? String(ex.buildVersion) : '',
             ex.executedAt || ''
           ]);
         });
@@ -7278,11 +7296,11 @@ import {
             df.description || '',
             classifyDefectPriority(df) || df.priority || df.severity || 'Medium',
             df.status || 'Open',
-            df.testCaseId || '',
-            df.executionId || '',
-            df.stepsToReproduce || '',
-            df.expectedResult || '',
-            df.actualResult || '',
+            (df.testCaseId !== undefined && df.testCaseId !== null) ? String(df.testCaseId) : '',
+            (df.executionId !== undefined && df.executionId !== null) ? String(df.executionId) : '',
+            (df.stepsToReproduce !== undefined && df.stepsToReproduce !== null) ? String(df.stepsToReproduce) : '',
+            (df.expectedResult !== undefined && df.expectedResult !== null) ? String(df.expectedResult) : '',
+            (df.actualResult !== undefined && df.actualResult !== null) ? String(df.actualResult) : '',
             df.externalIssueUrl || '',
             df.createdAt || '',
             df.updatedAt || ''
@@ -7353,7 +7371,8 @@ import {
       docScope = `Workspace Scope: All Projects (${targetProjects.length} Active Workspaces)`;
     } else {
       const p = targetProjects[0];
-      docScope = `Project Scope: ${p.name} • ${p.type} ${p.version ? '(v' + p.version + ')' : ''} • Status: ${p.status}`;
+      const hasVer = p.version !== undefined && p.version !== null && String(p.version).trim() !== '';
+      docScope = `Project Scope: ${p.name} • ${p.type} ${hasVer ? '(v' + p.version + ')' : ''} • Status: ${p.status}`;
     }
 
     const now = new Date();
@@ -7424,15 +7443,15 @@ import {
                 <td><strong>${escapeHTML(p.name)}</strong></td>
                 <td>${escapeHTML(p.type)}</td>
                 <td><span class="print-badge">${escapeHTML(p.status)}</span></td>
-                <td>${escapeHTML(p.version || '—')}</td>
-                <td>${p.testCaseCount || 0}</td>
-                <td>${p.passedTests || 0}</td>
-                <td>${p.failedTests || 0}</td>
-                <td>${p.blockedTests || 0}</td>
-                <td>${p.skippedTests || 0}</td>
-                <td>${p.notRunTests || 0}</td>
-                <td><strong>${p.passRate || 0}%</strong></td>
-                <td>${p.openDefects || 0}</td>
+                <td>${escapeHTML((p.version !== undefined && p.version !== null && String(p.version).trim() !== '') ? String(p.version) : '—')}</td>
+                <td>${p.testCaseCount ?? 0}</td>
+                <td>${p.passedTests ?? 0}</td>
+                <td>${p.failedTests ?? 0}</td>
+                <td>${p.blockedTests ?? 0}</td>
+                <td>${p.skippedTests ?? 0}</td>
+                <td>${p.notRunTests ?? 0}</td>
+                <td><strong>${p.passRate ?? 0}%</strong></td>
+                <td>${p.openDefects ?? 0}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -7562,7 +7581,7 @@ import {
                 <td>${escapeHTML(ex.tester || 'Tester')}</td>
                 <td>${escapeHTML(ex.environment || '—')}</td>
                 <td>${escapeHTML(ex.browserDevice || '—')}</td>
-                <td style="font-size: 8.5pt;">${escapeHTML(ex.actualResult || ex.notes || '—')}</td>
+                <td style="font-size: 8.5pt;">${escapeHTML((ex.actualResult !== undefined && ex.actualResult !== null && String(ex.actualResult).trim() !== '') ? String(ex.actualResult) : ((ex.notes !== undefined && ex.notes !== null && String(ex.notes).trim() !== '') ? String(ex.notes) : '—'))}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -7601,11 +7620,11 @@ import {
                 <td><strong>${escapeHTML(df.title)}</strong></td>
                 <td><span class="print-badge">${escapeHTML(classifyDefectPriority(df) || df.priority || df.severity || '—')}</span></td>
                 <td><span class="print-badge">${escapeHTML(df.status)}</span></td>
-                <td><code>${escapeHTML(df.testCaseId || '—')}</code></td>
+                <td><code>${escapeHTML((df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '') ? String(df.testCaseId) : '—')}</code></td>
                 <td style="font-size: 8.5pt;">${escapeHTML(df.stepsToReproduce || '—')}</td>
                 <td style="font-size: 8.5pt;">
-                  <div><strong>Exp:</strong> ${escapeHTML(df.expectedResult || '—')}</div>
-                  <div><strong>Act:</strong> ${escapeHTML(df.actualResult || '—')}</div>
+                  <div><strong>Exp:</strong> ${escapeHTML((df.expectedResult !== undefined && df.expectedResult !== null && String(df.expectedResult).trim() !== '') ? String(df.expectedResult) : '—')}</div>
+                  <div><strong>Act:</strong> ${escapeHTML((df.actualResult !== undefined && df.actualResult !== null && String(df.actualResult).trim() !== '') ? String(df.actualResult) : '—')}</div>
                 </td>
               </tr>
             `).join('')}

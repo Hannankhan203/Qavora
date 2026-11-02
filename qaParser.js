@@ -53,17 +53,29 @@ export function createEmptyPhase(overrides = {}) {
 }
 
 export function formatPhaseHeading(phase) {
-  const label = (phase.phaseLabel || '').trim();
-  const name = (phase.name || '').trim();
-  if (label && name) {
+  if (!phase) return 'Untitled Phase';
+  const label = typeof phase.phaseLabel === 'string'
+    ? phase.phaseLabel.trim()
+    : (phase.phaseLabel !== undefined && phase.phaseLabel !== null ? String(phase.phaseLabel).trim() : '');
+  const name = typeof phase.name === 'string'
+    ? phase.name.trim()
+    : (phase.name !== undefined && phase.name !== null ? String(phase.name).trim() : '');
+  if (label !== '' && name !== '') {
     return `${label} — ${name}`;
   }
-  return label || name || 'Untitled Phase';
+  if (label !== '') return label;
+  if (name !== '') return name;
+  return 'Untitled Phase';
 }
 
 export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
-  const lbl = typeof phaseLabel === 'string' ? phaseLabel.trim() : '';
-  if (!lbl) return '';
+  const lbl = typeof phaseLabel === 'string'
+    ? phaseLabel.trim()
+    : (phaseLabel !== undefined && phaseLabel !== null ? String(phaseLabel).trim() : '');
+  const fallbackStr = typeof fallbackNumber === 'string'
+    ? fallbackNumber.trim()
+    : (typeof fallbackNumber === 'number' ? String(fallbackNumber) : '');
+  if (!lbl) return fallbackStr;
   const cleaned = lbl.replace(/[:—–\-.]+$/, '').trim();
   const tokenMatch =
     cleaned.match(/(?:#|\s)([0-9]+(?:\.[0-9]+)*|[A-Za-z0-9]+)$/) ||
@@ -71,19 +83,11 @@ export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
   if (tokenMatch) {
     const token = tokenMatch[1].trim();
     if (['phase', 'stage', 'testing', 'qa', 'unknown'].includes(token.toLowerCase())) {
-      return typeof fallbackNumber === 'string'
-        ? fallbackNumber.trim()
-        : typeof fallbackNumber === 'number'
-        ? String(fallbackNumber)
-        : '';
+      return fallbackStr;
     }
     return token;
   }
-  return typeof fallbackNumber === 'string'
-    ? fallbackNumber.trim()
-    : typeof fallbackNumber === 'number'
-    ? String(fallbackNumber)
-    : '';
+  return fallbackStr;
 }
 
 export function parsePhaseNumber(val) {
@@ -110,13 +114,13 @@ export function comparePhaseNumbers(numA, numB) {
     if (valA !== valB) {
       return valA - valB;
     }
-    return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+    return String(numA ?? '').localeCompare(String(numB ?? ''), undefined, { numeric: true, sensitivity: 'base' });
   }
 
   if (valA !== null && valB === null) return -1;
   if (valA === null && valB !== null) return 1;
 
-  return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+  return String(numA ?? '').localeCompare(String(numB ?? ''), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export function comparePhases(phaseA, phaseB) {
@@ -128,16 +132,20 @@ export function comparePhases(phaseA, phaseB) {
     return phaseA.order - phaseB.order;
   }
 
-  const numA = phaseA.phaseNumber || (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
-  const numB = phaseB.phaseNumber || (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
+  const numA = (phaseA.phaseNumber !== undefined && phaseA.phaseNumber !== null && phaseA.phaseNumber !== '')
+    ? String(phaseA.phaseNumber)
+    : (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
+  const numB = (phaseB.phaseNumber !== undefined && phaseB.phaseNumber !== null && phaseB.phaseNumber !== '')
+    ? String(phaseB.phaseNumber)
+    : (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
 
-  if (numA || numB) {
+  if ((numA !== '' && numA !== undefined && numA !== null) || (numB !== '' && numB !== undefined && numB !== null)) {
     const comp = comparePhaseNumbers(numA, numB);
     if (comp !== 0) return comp;
   }
 
-  const nameA = phaseA.name || '';
-  const nameB = phaseB.name || '';
+  const nameA = phaseA.name !== undefined && phaseA.name !== null ? String(phaseA.name) : '';
+  const nameB = phaseB.name !== undefined && phaseB.name !== null ? String(phaseB.name) : '';
   return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
 }
 

@@ -440,7 +440,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       labelInput.className = 'qa-inline-input qa-phase-label-input';
       labelInput.placeholder = 'Phase # (optional)';
       labelInput.setAttribute('aria-label', 'Phase identifier or number');
-      labelInput.value = phase.phaseLabel || '';
+      labelInput.value = phase.phaseLabel !== undefined && phase.phaseLabel !== null ? String(phase.phaseLabel) : '';
       labelInput.addEventListener('input', () => {
         phase.phaseLabel = labelInput.value;
         phase.phaseNumber = phase.phaseLabel.trim()
@@ -458,7 +458,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       nameInput.className = 'qa-inline-input qa-phase-name-input';
       nameInput.placeholder = 'Phase Name';
       nameInput.setAttribute('aria-label', 'Phase name');
-      nameInput.value = phase.name || '';
+      nameInput.value = phase.name !== undefined && phase.name !== null ? String(phase.name) : '';
       nameInput.addEventListener('input', () => {
         phase.name = nameInput.value;
         phase.isImplicit = false;
@@ -561,7 +561,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       descInput.rows = phase.description && phase.description.includes('\n') ? 2 : 1;
       descInput.placeholder = 'Optional phase description or testing goal...';
       descInput.setAttribute('aria-label', 'Phase description');
-      descInput.value = phase.description || '';
+      descInput.value = phase.description !== undefined && phase.description !== null ? String(phase.description) : '';
       descInput.addEventListener('input', () => {
         phase.description = descInput.value;
       });
@@ -616,7 +616,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
             catInput.className = 'qa-inline-input qa-category-name-input';
             catInput.placeholder = 'Category Name';
             catInput.setAttribute('aria-label', 'Category name');
-            catInput.value = section.name || '';
+            catInput.value = section.name !== undefined && section.name !== null ? String(section.name) : '';
             catInput.addEventListener('input', () => {
               section.name = catInput.value;
             });
@@ -703,7 +703,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               idInput.placeholder = 'ID (opt)';
               idInput.title = 'Optional Test ID (e.g. AUTH-001)';
               idInput.setAttribute('aria-label', 'Test ID');
-              idInput.value = tc.testId || '';
+              idInput.value = tc.testId !== undefined && tc.testId !== null ? String(tc.testId) : '';
               idInput.addEventListener('input', () => {
                 tc.testId = idInput.value.trim();
               });
@@ -713,7 +713,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               textInput.className = 'qa-inline-input qa-test-text-input';
               textInput.placeholder = 'Describe the manual test verification...';
               textInput.setAttribute('aria-label', 'Test description');
-              textInput.value = tc.text || '';
+              textInput.value = tc.text !== undefined && tc.text !== null ? String(tc.text) : '';
               textInput.addEventListener('input', () => {
                 tc.text = textInput.value;
                 syncSummaryCounters();
@@ -863,7 +863,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'qa-inline-input qa-note-input';
-      input.value = note.text || '';
+      input.value = note.text !== undefined && note.text !== null ? String(note.text) : '';
       input.setAttribute('aria-label', 'Supporting instruction or environment note');
       input.addEventListener('input', () => {
         note.text = input.value;
@@ -958,7 +958,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
           const noteInput = document.createElement('input');
           noteInput.type = 'text';
           noteInput.className = 'qa-inline-input qa-note-input';
-          noteInput.value = n.text || '';
+          noteInput.value = n.text !== undefined && n.text !== null ? String(n.text) : '';
           noteInput.setAttribute('aria-label', 'Plan supporting note');
           noteInput.addEventListener('input', () => {
             n.text = noteInput.value;
@@ -1019,7 +1019,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'qa-inline-input qa-unclassified-input';
-      input.value = item.text || '';
+      input.value = item.text !== undefined && item.text !== null ? String(item.text) : '';
       input.setAttribute('aria-label', 'Unclassified content text');
       input.addEventListener('input', () => {
         item.text = input.value;
@@ -1208,23 +1208,23 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
     const resolvedTitle = (customTitle || '').trim() || deriveDefaultChecklistTitle(plan);
     return JSON.stringify({
       title: resolvedTitle,
-      documentNotes: (plan.documentNotes || []).map(n => ({ kind: n.kind, text: (n.text || '').trim() })),
+      documentNotes: (plan.documentNotes || []).map(n => ({ kind: n.kind, text: (n.text !== undefined && n.text !== null ? String(n.text) : '').trim() })),
       phases: (plan.phases || []).map(p => ({
-        phaseLabel: (p.phaseLabel || '').trim(),
-        phaseNumber: (p.phaseNumber || '').trim(),
-        name: (p.name || '').trim(),
-        description: (p.description || '').trim(),
-        notes: (p.notes || []).map(n => ({ kind: n.kind, text: (n.text || '').trim() })),
+        phaseLabel: (p.phaseLabel !== undefined && p.phaseLabel !== null ? String(p.phaseLabel) : '').trim(),
+        phaseNumber: (p.phaseNumber !== undefined && p.phaseNumber !== null ? String(p.phaseNumber) : '').trim(),
+        name: (p.name !== undefined && p.name !== null ? String(p.name) : '').trim(),
+        description: (p.description !== undefined && p.description !== null ? String(p.description) : '').trim(),
+        notes: (p.notes || []).map(n => ({ kind: n.kind, text: (n.text !== undefined && n.text !== null ? String(n.text) : '').trim() })),
         sections: (p.sections || []).map(s => ({
           type: s.type,
-          name: (s.name || '').trim(),
-          notes: (s.notes || []).map(n => ({ kind: n.kind, text: (n.text || '').trim() })),
+          name: (s.name !== undefined && s.name !== null ? String(s.name) : '').trim(),
+          notes: (s.notes || []).map(n => ({ kind: n.kind, text: (n.text !== undefined && n.text !== null ? String(n.text) : '').trim() })),
           tests: (s.tests || [])
-            .filter(t => t && typeof t.text === 'string' && t.text.trim().length > 0)
+            .filter(t => t && (typeof t.text === 'string' ? t.text.trim().length > 0 : (t.text !== undefined && t.text !== null && String(t.text).trim().length > 0)))
             .map(t => ({
-              testId: (t.testId || '').trim(),
-              priority: (t.priority || '').trim(),
-              text: t.text.trim()
+              testId: (t.testId !== undefined && t.testId !== null ? String(t.testId) : '').trim(),
+              priority: (t.priority !== undefined && t.priority !== null ? String(t.priority) : '').trim(),
+              text: String(t.text).trim()
             }))
         }))
       }))
