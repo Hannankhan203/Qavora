@@ -172,6 +172,59 @@ import {
   };
 
   // ==========================================================================
+  // Centralized Priority & Severity Classification Engine (ISSUE-007)
+  // ==========================================================================
+  const SUPPORTED_PRIORITY_CATEGORIES = ['Critical', 'High', 'Medium', 'Low'];
+
+  function classifyPriority(val) {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      if (val === 0) return 'Critical';
+      if (val === 1) return 'High';
+      if (val === 2) return 'Medium';
+      if (val === 3 || val === 4) return 'Low';
+      return null;
+    }
+    if (typeof val !== 'string') return null;
+    const s = val.trim().toLowerCase();
+    if (!s) return null;
+
+    // Critical mappings: Critical, Blocker, P0, Sev0, etc.
+    if (s === 'critical' || s === 'blocker' || s === 'p0' || s === 'sev0' || s === 'sev-0' || s === 'prio0' || s === 'priority 0' || s === 'fatal') {
+      return 'Critical';
+    }
+
+    // High mappings: High, Urgent, P1, Sev1, etc.
+    if (s === 'high' || s === 'urgent' || s === 'p1' || s === 'sev1' || s === 'sev-1' || s === 'prio1' || s === 'priority 1' || s === 'major') {
+      return 'High';
+    }
+
+    // Medium mappings: Medium, Normal, Moderate, P2, Sev2, etc.
+    if (s === 'medium' || s === 'normal' || s === 'moderate' || s === 'p2' || s === 'sev2' || s === 'sev-2' || s === 'prio2' || s === 'priority 2' || s === 'med') {
+      return 'Medium';
+    }
+
+    // Low mappings: Low, Minor, Trivial, P3, P4, Sev3, Sev4, etc.
+    if (s === 'low' || s === 'minor' || s === 'trivial' || s === 'p3' || s === 'p4' || s === 'sev3' || s === 'sev-3' || s === 'sev4' || s === 'sev-4' || s === 'prio3' || s === 'prio4' || s === 'priority 3' || s === 'priority 4') {
+      return 'Low';
+    }
+
+    return null;
+  }
+
+  function classifyDefectPriority(dfOrVal) {
+    if (dfOrVal === null || dfOrVal === undefined) return null;
+    if (typeof dfOrVal === 'object') {
+      const prioClass = classifyPriority(dfOrVal.priority);
+      if (prioClass) return prioClass;
+      const sevClass = classifyPriority(dfOrVal.severity);
+      if (sevClass) return sevClass;
+      return null;
+    }
+    return classifyPriority(dfOrVal);
+  }
+
+  // ==========================================================================
   // Safe Storage Layer with Comprehensive Schema Normalization
   // ==========================================================================
   const Storage = {
@@ -295,22 +348,29 @@ import {
             executedAt: ex.executedAt || new Date().toISOString()
           })) : [];
 
-          // Normalize Defects Array (Prompt 4)
-          const defects = Array.isArray(p.defects) ? p.defects.map((df, dfIdx) => ({
-            id: df.id || `DEF-${String(dfIdx + 1).padStart(3, '0')}`,
-            testCaseId: df.testCaseId || '',
-            executionId: df.executionId || '',
-            title: df.title || 'Untitled Defect',
-            description: typeof df.description === 'string' ? df.description.trim() : '',
-            severity: ['Critical', 'High', 'Medium', 'Low'].includes(df.severity) ? df.severity : 'Medium',
-            status: ['Open', 'In Progress', 'Resolved', 'Closed', 'Reopened'].includes(df.status) ? df.status : 'Open',
-            stepsToReproduce: typeof df.stepsToReproduce === 'string' ? df.stepsToReproduce.trim() : '',
-            expectedResult: typeof df.expectedResult === 'string' ? df.expectedResult.trim() : '',
-            actualResult: typeof df.actualResult === 'string' ? df.actualResult.trim() : '',
-            externalIssueUrl: typeof df.externalIssueUrl === 'string' ? df.externalIssueUrl.trim() : '',
-            createdAt: df.createdAt || createdAt,
-            updatedAt: df.updatedAt || updatedAt
-          })) : [];
+          // Normalize Defects Array (Prompt 4 & ISSUE-007 Fix)
+          const defects = Array.isArray(p.defects) ? p.defects.map((df, dfIdx) => {
+            const rawPriority = df.priority;
+            const rawSeverity = df.severity;
+            const classified = classifyDefectPriority(df);
+
+            return {
+              id: df.id || `DEF-${String(dfIdx + 1).padStart(3, '0')}`,
+              testCaseId: df.testCaseId || '',
+              executionId: df.executionId || '',
+              title: df.title || 'Untitled Defect',
+              description: typeof df.description === 'string' ? df.description.trim() : '',
+              priority: rawPriority !== undefined ? rawPriority : (classified || rawSeverity || ''),
+              severity: classified || (typeof rawSeverity === 'string' && rawSeverity.trim() ? rawSeverity.trim() : (typeof rawPriority === 'string' && rawPriority.trim() ? rawPriority.trim() : '')),
+              status: ['Open', 'In Progress', 'Resolved', 'Closed', 'Reopened'].includes(df.status) ? df.status : 'Open',
+              stepsToReproduce: typeof df.stepsToReproduce === 'string' ? df.stepsToReproduce.trim() : '',
+              expectedResult: typeof df.expectedResult === 'string' ? df.expectedResult.trim() : '',
+              actualResult: typeof df.actualResult === 'string' ? df.actualResult.trim() : '',
+              externalIssueUrl: typeof df.externalIssueUrl === 'string' ? df.externalIssueUrl.trim() : '',
+              createdAt: df.createdAt || createdAt,
+              updatedAt: df.updatedAt || updatedAt
+            };
+          }) : [];
 
           // Compute aggregated testing statistics (Prompt 4 strict formulas)
           let totalCases = 0;
@@ -1186,7 +1246,8 @@ import {
   }
 
   function getPriorityBadgeClass(priority) {
-    switch (priority) {
+    const category = classifyPriority(priority);
+    switch (category) {
       case 'Critical':
         return 'p-critical';
       case 'High':
@@ -1194,6 +1255,7 @@ import {
       case 'Medium':
         return 'p-medium';
       case 'Low':
+        return 'p-low';
       default:
         return 'p-low';
     }
@@ -2018,10 +2080,11 @@ import {
     suites.forEach(suite => {
       (suite.testCases || []).forEach(tc => {
         totalCases++;
-        if (tc.priority === 'Critical') critCount++;
-        else if (tc.priority === 'High') highCount++;
-        else if (tc.priority === 'Medium') medCount++;
-        else if (tc.priority === 'Low') lowCount++;
+        const cPrio = classifyPriority(tc.priority);
+        if (cPrio === 'Critical') critCount++;
+        else if (cPrio === 'High') highCount++;
+        else if (cPrio === 'Medium') medCount++;
+        else if (cPrio === 'Low') lowCount++;
       });
     });
 
@@ -4149,6 +4212,7 @@ import {
         executionId: '', // populated below
         title: defectTitle,
         description: notes || `Recorded during test execution of ${targetCase.id}`,
+        priority: defectSeverity,
         severity: defectSeverity,
         status: 'Open',
         stepsToReproduce: defectSteps,
@@ -4446,7 +4510,7 @@ import {
     const openCount = allDefects.filter(d => ['Open', 'Reopened'].includes(d.status)).length;
     const inProgressCount = allDefects.filter(d => d.status === 'In Progress').length;
     const resolvedCount = allDefects.filter(d => ['Resolved', 'Closed'].includes(d.status)).length;
-    const criticalCount = allDefects.filter(d => d.severity === 'Critical').length;
+    const criticalCount = allDefects.filter(d => classifyDefectPriority(d) === 'Critical').length;
 
     if (DOM.defectsStatTotal) DOM.defectsStatTotal.textContent = totalCount.toString();
     if (DOM.defectsStatOpen) DOM.defectsStatOpen.textContent = openCount.toString();
@@ -4474,7 +4538,7 @@ import {
         const descMatch = (d.description || '').toLowerCase().includes(q);
         if (!idMatch && !titleMatch && !descMatch) return false;
       }
-      if (State.defectSeverityFilter !== 'ALL' && d.severity !== State.defectSeverityFilter) return false;
+      if (State.defectSeverityFilter !== 'ALL' && classifyDefectPriority(d) !== State.defectSeverityFilter) return false;
       if (State.defectStatusFilter !== 'ALL' && d.status !== State.defectStatusFilter) return false;
       return true;
     });
@@ -4486,7 +4550,7 @@ import {
           return new Date(a.createdAt) - new Date(b.createdAt);
         case 'severity-desc': {
           const map = { Critical: 4, High: 3, Medium: 2, Low: 1 };
-          return (map[b.severity] || 0) - (map[a.severity] || 0);
+          return (map[classifyDefectPriority(b)] || 0) - (map[classifyDefectPriority(a)] || 0);
         }
         case 'id-desc':
           return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
@@ -4574,7 +4638,9 @@ import {
     `;
 
     filtered.forEach(df => {
-      const sevClass = getPriorityBadgeClass(df.severity);
+      const prioCategory = classifyDefectPriority(df);
+      const sevClass = getPriorityBadgeClass(prioCategory || df.severity || df.priority);
+      const displaySeverity = prioCategory || df.priority || df.severity || 'Unassigned';
       const statusClass = getDefectStatusBadgeClass(df.status);
 
       const linkedTestHtml = df.testCaseId
@@ -4604,7 +4670,7 @@ import {
             ${linkedTestHtml}
           </td>
           <td>
-            <span class="priority-badge ${sevClass}">${escapeHTML(df.severity)}</span>
+            <span class="priority-badge ${sevClass}">${escapeHTML(displaySeverity)}</span>
           </td>
           <td>
             <span class="status-badge ${statusClass}">${escapeHTML(df.status)}</span>
@@ -4726,7 +4792,7 @@ import {
       if (DOM.defectModalSubmitText) DOM.defectModalSubmitText.textContent = 'Save Changes';
 
       if (DOM.defectTitleInput) DOM.defectTitleInput.value = df.title || '';
-      if (DOM.defectSeveritySelect) DOM.defectSeveritySelect.value = df.severity || 'Medium';
+      if (DOM.defectSeveritySelect) DOM.defectSeveritySelect.value = classifyDefectPriority(df) || 'Medium';
       if (DOM.defectStatusSelect) DOM.defectStatusSelect.value = df.status || 'Open';
       if (DOM.defectStepsInput) DOM.defectStepsInput.value = df.stepsToReproduce || '';
       if (DOM.defectExpectedInput) DOM.defectExpectedInput.value = df.expectedResult || '';
@@ -4829,6 +4895,7 @@ import {
       if (!df) return;
 
       df.title = title;
+      df.priority = severity;
       df.severity = severity;
       df.status = status;
       df.testCaseId = linkedCaseId;
@@ -4863,6 +4930,7 @@ import {
         executionId: '',
         title: title,
         description: description,
+        priority: severity,
         severity: severity,
         status: status,
         stepsToReproduce: steps,
@@ -4922,8 +4990,9 @@ import {
     if (DOM.viewDefectTitle) DOM.viewDefectTitle.textContent = df.title;
 
     if (DOM.viewDefectSeverity) {
-      DOM.viewDefectSeverity.className = `priority-badge ${getPriorityBadgeClass(df.severity)}`;
-      DOM.viewDefectSeverity.textContent = df.severity;
+      const prioCategory = classifyDefectPriority(df);
+      DOM.viewDefectSeverity.className = `priority-badge ${getPriorityBadgeClass(prioCategory || df.severity || df.priority)}`;
+      DOM.viewDefectSeverity.textContent = prioCategory || df.severity || df.priority || 'Unassigned';
     }
 
     if (DOM.viewDefectStatus) {
@@ -5576,22 +5645,44 @@ import {
     let resolvedDefects = 0;
     let closedDefects = 0;
     let reopenedDefects = 0;
+
     let criticalDefects = 0;
     let highDefects = 0;
     let mediumDefects = 0;
     let lowDefects = 0;
+    let unclassifiedDefects = 0;
+
+    let activeCriticalDefects = 0;
+    let activeHighDefects = 0;
+    let activeMediumDefects = 0;
+    let activeLowDefects = 0;
 
     filteredDefects.forEach(d => {
-      if (d.status === 'Open') openDefects++;
-      else if (d.status === 'In Progress') inProgressDefects++;
-      else if (d.status === 'Resolved') resolvedDefects++;
-      else if (d.status === 'Closed') closedDefects++;
-      else if (d.status === 'Reopened') reopenedDefects++;
+      const status = d.status || 'Open';
+      if (status === 'Open') openDefects++;
+      else if (status === 'In Progress') inProgressDefects++;
+      else if (status === 'Resolved') resolvedDefects++;
+      else if (status === 'Closed') closedDefects++;
+      else if (status === 'Reopened') reopenedDefects++;
 
-      if (d.severity === 'Critical') criticalDefects++;
-      else if (d.severity === 'High') highDefects++;
-      else if (d.severity === 'Medium') mediumDefects++;
-      else if (d.severity === 'Low') lowDefects++;
+      const isActive = ['Open', 'In Progress', 'Reopened'].includes(status);
+      const prioCategory = classifyDefectPriority(d);
+
+      if (prioCategory === 'Critical') {
+        criticalDefects++;
+        if (isActive) activeCriticalDefects++;
+      } else if (prioCategory === 'High') {
+        highDefects++;
+        if (isActive) activeHighDefects++;
+      } else if (prioCategory === 'Medium') {
+        mediumDefects++;
+        if (isActive) activeMediumDefects++;
+      } else if (prioCategory === 'Low') {
+        lowDefects++;
+        if (isActive) activeLowDefects++;
+      } else {
+        unclassifiedDefects++;
+      }
     });
 
     const activeDefects = openDefects + inProgressDefects + reopenedDefects;
@@ -5630,6 +5721,11 @@ import {
       highDefects,
       mediumDefects,
       lowDefects,
+      unclassifiedDefects,
+      activeCriticalDefects,
+      activeHighDefects,
+      activeMediumDefects,
+      activeLowDefects,
       defectFixRate
     };
   }
@@ -5709,7 +5805,7 @@ import {
     if (DOM.repKpiTotalDefects) DOM.repKpiTotalDefects.textContent = data.totalDefects.toString();
     if (DOM.repKpiOpenDefects) DOM.repKpiOpenDefects.textContent = data.activeDefects.toString();
     if (DOM.repKpiCriticalDefects) {
-      DOM.repKpiCriticalDefects.textContent = `${data.criticalDefects} critical blocker${data.criticalDefects === 1 ? '' : 's'}`;
+      DOM.repKpiCriticalDefects.textContent = `${data.activeCriticalDefects} critical blocker${data.activeCriticalDefects === 1 ? '' : 's'}`;
     }
     if (DOM.repKpiResolvedDefects) DOM.repKpiResolvedDefects.textContent = data.resolvedTotal.toString();
     if (DOM.repKpiDefectFixRate) DOM.repKpiDefectFixRate.textContent = `${data.defectFixRate}% resolution rate`;
@@ -5721,12 +5817,12 @@ import {
     const insights = [];
 
     // Rule 1: Critical Defect Release Blockers
-    if (data.criticalDefects > 0) {
+    if (data.activeCriticalDefects > 0) {
       insights.push({
         severity: 'critical',
         badge: 'Critical Blocker',
-        title: `${data.criticalDefects} Critical Defect(s) Active`,
-        text: `${data.criticalDefects} critical severity defect(s) require immediate remediation before release approval.`,
+        title: `${data.activeCriticalDefects} Critical Defect(s) Active`,
+        text: `${data.activeCriticalDefects} critical severity defect(s) require immediate remediation before release approval.`,
         action: 'Review Defect Tracking workspace to assign and resolve urgent defects.'
       });
     }
@@ -5759,7 +5855,7 @@ import {
     }
 
     // Rule 3: Pass Rate & Stability
-    if (data.totalExecutions > 0 && data.passRate >= 85 && data.criticalDefects === 0) {
+    if (data.totalExecutions > 0 && data.passRate >= 85 && data.activeCriticalDefects === 0) {
       insights.push({
         severity: 'success',
         badge: 'Stable Build',
@@ -5824,7 +5920,7 @@ import {
 
     // Update Overall QA Health Badge
     if (DOM.repHealthStatusBadge) {
-      if (data.criticalDefects > 0) {
+      if (data.activeCriticalDefects > 0) {
         DOM.repHealthStatusBadge.className = 'report-health-badge health-danger';
         DOM.repHealthStatusBadge.textContent = 'QA Assessment: Critical Blockers';
       } else if (data.failRate > 25 || data.completionRate < 40 || data.activeDefects >= 5) {
@@ -6302,7 +6398,7 @@ import {
     let html = '<div class="priority-breakdown-list">';
 
     priorities.forEach(prio => {
-      const cases = data.allCases.filter(c => c.priority === prio);
+      const cases = data.allCases.filter(c => classifyPriority(c.priority) === prio);
       const total = cases.length;
 
       let pass = 0;
@@ -6467,7 +6563,7 @@ import {
         <div class="defect-breakdown-wrapper">
           <div class="defect-summary-pills">
             <div class="defect-pill">
-              <div class="defect-pill-val text-red">${data.criticalDefects}</div>
+              <div class="defect-pill-val text-red">${data.activeCriticalDefects}</div>
               <div class="defect-pill-lbl">Critical Blockers</div>
             </div>
             <div class="defect-pill">
@@ -6482,11 +6578,11 @@ import {
 
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">
-              Defects by Severity
+              Defects by Priority
             </div>
             <div class="priority-row-item">
               <div class="priority-row-header">
-                <span style="color: var(--color-red); font-weight: 600;">Critical Severity</span>
+                <span style="color: var(--color-red); font-weight: 600;">Critical Priority</span>
                 <span style="font-weight: 700;">${data.criticalDefects}</span>
               </div>
               <div class="progress-bar-track" style="height: 6px; margin: 0;">
@@ -6495,7 +6591,7 @@ import {
             </div>
             <div class="priority-row-item">
               <div class="priority-row-header">
-                <span style="color: var(--color-amber); font-weight: 600;">High Severity</span>
+                <span style="color: var(--color-amber); font-weight: 600;">High Priority</span>
                 <span style="font-weight: 700;">${data.highDefects}</span>
               </div>
               <div class="progress-bar-track" style="height: 6px; margin: 0;">
@@ -6504,7 +6600,7 @@ import {
             </div>
             <div class="priority-row-item">
               <div class="priority-row-header">
-                <span style="color: var(--color-blue); font-weight: 600;">Medium Severity</span>
+                <span style="color: var(--color-blue); font-weight: 600;">Medium Priority</span>
                 <span style="font-weight: 700;">${data.mediumDefects}</span>
               </div>
               <div class="progress-bar-track" style="height: 6px; margin: 0;">
@@ -6513,13 +6609,24 @@ import {
             </div>
             <div class="priority-row-item">
               <div class="priority-row-header">
-                <span style="color: var(--text-muted); font-weight: 600;">Low Severity</span>
+                <span style="color: var(--text-muted); font-weight: 600;">Low Priority</span>
                 <span style="font-weight: 700;">${data.lowDefects}</span>
               </div>
               <div class="progress-bar-track" style="height: 6px; margin: 0;">
                 <div class="progress-bar-fill" style="width: ${data.totalDefects > 0 ? (data.lowDefects / data.totalDefects) * 100 : 0}%; background: var(--text-muted);"></div>
               </div>
             </div>
+            ${data.unclassifiedDefects > 0 ? `
+            <div class="priority-row-item">
+              <div class="priority-row-header">
+                <span style="color: var(--text-secondary); font-weight: 600;">Unclassified Priority</span>
+                <span style="font-weight: 700;">${data.unclassifiedDefects}</span>
+              </div>
+              <div class="progress-bar-track" style="height: 6px; margin: 0;">
+                <div class="progress-bar-fill" style="width: ${data.totalDefects > 0 ? (data.unclassifiedDefects / data.totalDefects) * 100 : 0}%; background: var(--border-color);"></div>
+              </div>
+            </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -6547,7 +6654,7 @@ import {
             <tr>
               <th style="width: 80px;">ID</th>
               <th>Defect Title</th>
-              <th style="width: 90px;">Severity</th>
+              <th style="width: 100px;">Priority</th>
               <th style="width: 100px;">Status</th>
               <th style="width: 70px; text-align: center;">Action</th>
             </tr>
@@ -6555,9 +6662,25 @@ import {
           <tbody>
       `;
 
-      data.filteredDefects.slice(0, 10).forEach(df => {
-        const sevClass = getPriorityBadgeClass(df.severity);
+      // Sort defects: Active first, then by priority weight (Critical > High > Medium > Low), then recency
+      const priorityWeights = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+      const sortedDefects = [...data.filteredDefects].sort((a, b) => {
+        const aActive = ['Open', 'In Progress', 'Reopened'].includes(a.status) ? 1 : 0;
+        const bActive = ['Open', 'In Progress', 'Reopened'].includes(b.status) ? 1 : 0;
+        if (bActive !== aActive) return bActive - aActive;
+
+        const aPrio = priorityWeights[classifyDefectPriority(a)] || 0;
+        const bPrio = priorityWeights[classifyDefectPriority(b)] || 0;
+        if (bPrio !== aPrio) return bPrio - aPrio;
+
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+      sortedDefects.slice(0, 10).forEach(df => {
+        const prioCategory = classifyDefectPriority(df);
+        const sevClass = getPriorityBadgeClass(prioCategory || df.priority || df.severity);
         const statClass = getDefectStatusBadgeClass(df.status);
+        const displayPriority = prioCategory || df.priority || df.severity || 'Unassigned';
 
         html += `
           <tr>
@@ -6569,7 +6692,7 @@ import {
               ${df.testCaseId ? `<div style="font-size: 0.6875rem; color: var(--text-muted);">Linked: ${escapeHTML(df.testCaseId)}</div>` : ''}
             </td>
             <td>
-              <span class="priority-badge ${sevClass}">${escapeHTML(df.severity)}</span>
+              <span class="priority-badge ${sevClass}">${escapeHTML(displayPriority)}</span>
             </td>
             <td>
               <span class="status-badge ${statClass}">${escapeHTML(df.status)}</span>
@@ -7153,7 +7276,7 @@ import {
             df.id || '',
             df.title || 'Untitled Defect',
             df.description || '',
-            df.severity || 'Medium',
+            classifyDefectPriority(df) || df.priority || df.severity || 'Medium',
             df.status || 'Open',
             df.testCaseId || '',
             df.executionId || '',
@@ -7476,7 +7599,7 @@ import {
                 <td><code>${escapeHTML(df.id)}</code></td>
                 <td>${escapeHTML(df.projectName)}</td>
                 <td><strong>${escapeHTML(df.title)}</strong></td>
-                <td><span class="print-badge">${escapeHTML(df.severity)}</span></td>
+                <td><span class="print-badge">${escapeHTML(classifyDefectPriority(df) || df.priority || df.severity || '—')}</span></td>
                 <td><span class="print-badge">${escapeHTML(df.status)}</span></td>
                 <td><code>${escapeHTML(df.testCaseId || '—')}</code></td>
                 <td style="font-size: 8.5pt;">${escapeHTML(df.stepsToReproduce || '—')}</td>
