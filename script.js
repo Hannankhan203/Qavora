@@ -10,6 +10,10 @@ import { initChecklistGenerator } from './checklistGeneratorUI.js';
 import { initQARunnerAndChecklists } from './qaRunnerUI.js';
 import { initQAChecklistTransferUI } from './qaChecklistTransferUI.js';
 import {
+  validateChecklistTransferCode,
+  applyChecklistTransferPayload
+} from './qaChecklistTransfer.js';
+import {
   CHECKLISTS_STORAGE_KEY,
   ACTIVE_RUNNER_STORAGE_KEY,
   loadAllChecklists,
@@ -1190,6 +1194,7 @@ import {
     importModeMerge: document.getElementById('import-mode-merge'),
     importModeReplace: document.getElementById('import-mode-replace'),
     importReplaceWarning: document.getElementById('import-replace-warning'),
+    importReplaceWarningText: document.getElementById('import-replace-warning-text'),
     importPreviewCancelBtn: document.getElementById('import-preview-cancel-btn'),
     importPreviewConfirmBtn: document.getElementById('import-preview-confirm-btn'),
     importConfirmBtnText: document.getElementById('import-confirm-btn-text'),
@@ -7999,26 +8004,61 @@ import {
   function handleImportFile(file) {
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
-      showImportValidationAlert('Invalid file format. Please select a JSON (.json) file.');
-      return;
-    }
+    hideImportValidationAlert();
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
-        const text = e.target.result;
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          showImportValidationAlert('Invalid JSON syntax: Unable to parse file.');
+        const rawContent = typeof e.target.result === 'string' ? e.target.result : '';
+        const text = rawContent.trim().replace(/^\uFEFF/, '');
+
+        if (!text) {
+          showImportValidationAlert('The selected file is empty.');
           return;
         }
 
-        validateAndPreviewImport(data, file.name, file.size);
+        // 1. Detect if this is a TPX1 transfer code file (or starts with TPX prefix)
+        const isTransferCodeCandidate = text.startsWith('TPX1.') || /^TPX\d+\./i.test(text);
+
+        if (isTransferCodeCandidate) {
+          try {
+            const transferResult = await validateChecklistTransferCode(text);
+            if (!transferResult.ok) {
+              showImportValidationAlert(transferResult.error || 'Invalid or corrupted transfer code file.');
+              return;
+            }
+            previewTransferImport(transferResult.payload, file.name, file.size);
+            return;
+          } catch (tpxErr) {
+            showImportValidationAlert(tpxErr && tpxErr.message ? tpxErr.message : 'Unable to decode transfer code file.');
+            return;
+          }
+        }
+
+        // 2. Otherwise, attempt JSON parsing for project exports or full backups
+        let jsonData = null;
+        try {
+          jsonData = JSON.parse(text);
+        } catch (_jsonErr) {
+          // If JSON parse fails, check if text might contain a TPX1 code (e.g. wrapped in comments or whitespace)
+          if (text.includes('TPX1.')) {
+            const extractedCodeMatch = text.match(/TPX1\.[a-z0-9\-_.]+/i);
+            if (extractedCodeMatch) {
+              const transferResult = await validateChecklistTransferCode(extractedCodeMatch[0]);
+              if (transferResult.ok) {
+                previewTransferImport(transferResult.payload, file.name, file.size);
+                return;
+              }
+            }
+          }
+
+          showImportValidationAlert('Invalid file format. Please select a valid Qavora JSON backup (.json) or device transfer code (.txt) file.');
+          return;
+        }
+
+        validateAndPreviewImport(jsonData, file.name, file.size);
       } catch (err) {
-        showImportValidationAlert(`Import read error: ${err.message}`);
+        showImportValidationAlert(`Import read error: ${err.message || err}`);
       }
     };
     reader.onerror = function() {
@@ -8180,6 +8220,86 @@ import {
     }
   }
 
+  function previewTransferImport(transferPayload, filename, filesize) {
+    if (!transferPayload || !Array.isArray(transferPayload.checklists) || transferPayload.checklists.length === 0) {
+      showImportValidationAlert('No QA checklists found in transfer code payload.');
+      return;
+    }
+
+    const { summary, checklists, generatedAt } = transferPayload;
+    hideImportValidationAlert();
+
+    // Populate Import Preview Modal metadata
+    if (DOM.importPreviewFilename) DOM.importPreviewFilename.textContent = filename || 'transfer_code.txt';
+    if (DOM.importPreviewFilesize) {
+      const formattedSize = filesize > 1048576
+        ? (filesize / 1048576).toFixed(1) + ' MB'
+        : (filesize / 1024).toFixed(1) + ' KB';
+      DOM.importPreviewFilesize.textContent = formattedSize;
+    }
+    if (DOM.importPreviewFormat) {
+      DOM.importPreviewFormat.textContent = 'Device Transfer Code (TPX1)';
+    }
+    if (DOM.importPreviewDate) {
+      DOM.importPreviewDate.textContent = generatedAt
+        ? `${formatDisplayDate(generatedAt)} (${formatRelativeTime(generatedAt)})`
+        : 'Recently';
+    }
+
+    // Counters:
+    if (DOM.importPreviewProjectsCnt) DOM.importPreviewProjectsCnt.textContent = '0';
+    if (DOM.importPreviewPlansCnt) DOM.importPreviewPlansCnt.textContent = (summary.totalChecklists || checklists.length).toString();
+    if (DOM.importPreviewSuitesCnt) DOM.importPreviewSuitesCnt.textContent = (summary.totalPhases || 0).toString();
+    if (DOM.importPreviewCasesCnt) DOM.importPreviewCasesCnt.textContent = (summary.totalTests || 0).toString();
+    if (DOM.importPreviewExecsCnt) DOM.importPreviewExecsCnt.textContent = (summary.completedTests || 0).toString();
+    if (DOM.importPreviewDefectsCnt) DOM.importPreviewDefectsCnt.textContent = '0';
+
+    // Checklist Pills
+    if (DOM.importPreviewProjectsList) {
+      const chkPills = checklists.map((chk, idx) => {
+        const normalizedChk = normalizeChecklistRecord(chk, idx);
+        const phaseCnt = normalizedChk && Array.isArray(normalizedChk.phases) ? normalizedChk.phases.length : 0;
+        let testCount = 0;
+        if (normalizedChk && Array.isArray(normalizedChk.phases)) {
+          normalizedChk.phases.forEach(ph => {
+            if (Array.isArray(ph.sections)) {
+              ph.sections.forEach(sec => {
+                if (Array.isArray(sec.tests)) testCount += sec.tests.length;
+              });
+            }
+          });
+        }
+        return `
+          <span class="import-proj-pill">
+            <strong>QA Checklist: ${escapeHTML((normalizedChk && normalizedChk.title) || 'Untitled Checklist')}</strong>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">(${phaseCnt} phases, ${testCount} tests)</span>
+          </span>
+        `;
+      });
+      DOM.importPreviewProjectsList.innerHTML = chkPills.join('');
+    }
+
+    // Default to Merge mode
+    if (DOM.importModeMerge) DOM.importModeMerge.checked = true;
+    if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'none';
+    if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Merge Checklists';
+    if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-primary';
+
+    State.pendingImportPayload = {
+      isTransferCode: true,
+      transferPayload: transferPayload,
+      rawProjects: [],
+      rawQaChecklists: checklists,
+      payloadType: 'Device Transfer Code (TPX1)',
+      activities: []
+    };
+
+    if (DOM.importPreviewModal) {
+      DOM.importPreviewModal.classList.add('open');
+      DOM.importPreviewModal.setAttribute('aria-hidden', 'false');
+    }
+  }
+
   function closeImportPreviewModal() {
     if (DOM.importPreviewModal) {
       DOM.importPreviewModal.classList.remove('open');
@@ -8190,7 +8310,49 @@ import {
   }
 
   function commitImport() {
-    if (!State.pendingImportPayload || !Array.isArray(State.pendingImportPayload.rawProjects)) {
+    if (!State.pendingImportPayload) {
+      showToast('No active import payload to process', 'error');
+      return;
+    }
+
+    // Handle TPX1 Device Transfer Payloads
+    if (State.pendingImportPayload.isTransferCode && State.pendingImportPayload.transferPayload) {
+      const strategy = document.querySelector('input[name="import-mode"]:checked')?.value || 'merge';
+      const currentProjects = Storage.getProjects();
+      const currentActivities = Storage.getActivities();
+      const currentChecklists = loadAllChecklists().checklists;
+
+      if (strategy === 'replace') {
+        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+      }
+
+      const applyRes = applyChecklistTransferPayload(State.pendingImportPayload.transferPayload, strategy);
+      if (!applyRes.ok) {
+        showToast(`Import failed: ${applyRes.error || 'Unable to apply transfer payload.'}`, 'error');
+        return;
+      }
+
+      const actionLabel = strategy === 'replace'
+        ? 'Transferred Checklists (Replace)'
+        : 'Transferred Checklists (Merge)';
+      const summaryDetail = strategy === 'replace'
+        ? `${applyRes.importedCount} QA Checklists restored (replaced)`
+        : `${applyRes.importedCount} QA Checklists merged`;
+
+      Storage.addActivity(actionLabel, summaryDetail);
+
+      closeImportPreviewModal();
+      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      const toastSuccessMsg = strategy === 'replace'
+        ? `Restored ${applyRes.importedCount} QA Checklist(s) from transfer code. Pre-restore rollback snapshot saved.`
+        : `Merged ${applyRes.importedCount} QA Checklist(s) into workspace.`;
+      showToast(toastSuccessMsg, 'success');
+      renderDashboard();
+      renderDataWorkspace();
+      return;
+    }
+
+    if (!Array.isArray(State.pendingImportPayload.rawProjects)) {
       showToast('No active import payload to process', 'error');
       return;
     }
@@ -9221,7 +9383,10 @@ import {
     if (DOM.importModeMerge) {
       DOM.importModeMerge.addEventListener('change', () => {
         if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'none';
-        if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Merge Data';
+        const isTransfer = Boolean(State.pendingImportPayload && State.pendingImportPayload.isTransferCode);
+        if (DOM.importConfirmBtnText) {
+          DOM.importConfirmBtnText.textContent = isTransfer ? 'Confirm & Merge Checklists' : 'Confirm & Merge Data';
+        }
         if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-primary';
       });
     }
@@ -9229,7 +9394,15 @@ import {
     if (DOM.importModeReplace) {
       DOM.importModeReplace.addEventListener('change', () => {
         if (DOM.importReplaceWarning) DOM.importReplaceWarning.style.display = 'flex';
-        if (DOM.importConfirmBtnText) DOM.importConfirmBtnText.textContent = 'Confirm & Replace Workspace';
+        const isTransfer = Boolean(State.pendingImportPayload && State.pendingImportPayload.isTransferCode);
+        if (DOM.importReplaceWarningText) {
+          DOM.importReplaceWarningText.innerHTML = isTransfer
+            ? '<strong>Warning:</strong> Existing saved QA checklists will be replaced. Qavora will preserve a rollback snapshot in memory so you can undo this restore if needed.'
+            : '<strong>Warning:</strong> Existing projects will be overwritten. Qavora will preserve a rollback snapshot in memory so you can undo this restore if needed.';
+        }
+        if (DOM.importConfirmBtnText) {
+          DOM.importConfirmBtnText.textContent = isTransfer ? 'Confirm & Replace Checklists' : 'Confirm & Replace Workspace';
+        }
         if (DOM.importPreviewConfirmBtn) DOM.importPreviewConfirmBtn.className = 'btn btn-danger';
       });
     }

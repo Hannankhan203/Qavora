@@ -2618,7 +2618,7 @@
                   <div class="form-group">
                     <div class="transfer-input-label-row">
                       <label for="transfer-receive-input" class="form-label">Enter Transfer Code</label>
-                      <input type="file" id="transfer-code-file-input" accept=".txt,text/plain,application/octet-stream" style="display: none;" />
+                      <input type="file" id="transfer-code-file-input" accept=".txt,.json,text/plain,application/json,application/octet-stream" style="display: none;" />
                       <button type="button" id="btn-load-transfer-code-file" class="btn btn-ghost btn-xs">
                         <span>Load Code File (.txt)</span>
                       </button>
@@ -2989,13 +2989,13 @@
               <div class="panel" style="grid-column: 1 / -1;">
                 <div class="panel-header">
                   <div class="panel-title-group">
-                    <h3 class="panel-title">Import JSON Project or Workspace Backup</h3>
+                    <h3 class="panel-title">Import Project, Workspace Backup, or Device Transfer</h3>
                     <span class="panel-tag">Drag &amp; Drop Ready</span>
                   </div>
                 </div>
                 <div class="panel-body">
                   <div id="import-dropzone" class="file-dropzone">
-                    <input type="file" id="import-file-input" accept=".json,application/json" class="file-dropzone-input" />
+                    <input type="file" id="import-file-input" accept=".json,.txt,application/json,text/plain,application/octet-stream" class="file-dropzone-input" />
                     <div class="dropzone-content">
                       <div class="dropzone-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3004,9 +3004,9 @@
                           <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
                       </div>
-                      <h4 class="dropzone-title">Select a JSON File or Drag &amp; Drop Here</h4>
+                      <h4 class="dropzone-title">Select a JSON or Transfer File, or Drag &amp; Drop Here</h4>
                       <p class="dropzone-desc">
-                        Supports single project exports (<code class="code-tag">Qavora_Project_*.json</code>) or full application backups (<code class="code-tag">Qavora_Full_Backup_*.json</code>).
+                        Supports single project exports (<code class="code-tag">Qavora_Project_*.json</code>), full application backups (<code class="code-tag">Qavora_Full_Backup_*.json</code>), or device transfer files (<code class="code-tag">Qavora_Transfer_Code_*.txt</code>).
                       </p>
                       <button type="button" id="btn-browse-file" class="btn btn-primary btn-sm" style="margin-top: 10px;">
                         <span>Browse Files</span>
@@ -4747,8 +4747,8 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span>
-            <strong>Warning:</strong> Existing projects will be overwritten. Qavora will preserve a rollback snapshot in memory so you can undo this restore if needed.
+          <span id="import-replace-warning-text">
+            <strong>Warning:</strong> Existing data will be overwritten. Qavora will preserve a rollback snapshot in memory so you can undo this restore if needed.
           </span>
         </div>
 
