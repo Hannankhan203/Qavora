@@ -3075,7 +3075,10 @@ textarea:focus-visible,
 
 .view-steps-table-wrap {
   margin-top: 4px;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .view-steps-table {
@@ -4612,6 +4615,20 @@ body.mobile-nav-open {
     display: none;
   }
 
+  .top-nav {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .top-nav-right .notification-btn {
+    display: none;
+  }
+
+  .page-title {
+    font-size: 0.95rem;
+    line-height: 1.25;
+  }
+
   .top-nav .icon-btn,
   .top-nav-right #header-create-btn {
     width: 36px;
@@ -4622,7 +4639,7 @@ body.mobile-nav-open {
   }
 
   .top-nav-right {
-    gap: 5px;
+    gap: 4px;
   }
 
   .avatar {
@@ -4632,8 +4649,28 @@ body.mobile-nav-open {
 
   .project-stats-grid,
   .detail-qa-stats-grid,
-  .plan-metrics-bar {
+  .plan-metrics-bar,
+  .qa-mychk-stats-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 320px) {
+  .user-profile {
+    display: none;
+  }
+
+  .top-nav {
+    padding: 0 6px;
+    gap: 4px;
+  }
+
+  .top-nav-left {
+    gap: 6px;
+  }
+
+  .content-viewport {
+    padding: 10px 8px;
   }
 }
 
@@ -4662,6 +4699,26 @@ body.mobile-nav-open {
     font-size: 1.15rem;
   }
 
+  .qa-runner-header-card,
+  .qa-runner-progress-panel {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+  }
+
+  .qa-runner-metrics-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .qa-mychk-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .qa-runner-progress-panel .qa-runner-progress-top {
+    margin-bottom: 6px;
+  }
+
   .modal-backdrop {
     padding: 8px;
   }
@@ -4669,7 +4726,7 @@ body.mobile-nav-open {
   .modal-dialog,
   .modal-dialog.modal-dialog-lg,
   .modal-dialog.modal-dialog-sm {
-    max-height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 12px);
     margin: auto;
   }
 
@@ -6671,6 +6728,9 @@ body.mobile-nav-open {
   gap: 8px;
   flex-wrap: wrap;
   flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .qa-test-id-chip {
@@ -8032,6 +8092,12 @@ body.mobile-nav-open {
   }
 }
 
+@media (max-width: 767px) {
+  .qa-mychk-actions .btn {
+    flex: 1 1 140px;
+  }
+}
+
 @media (max-width: 640px) {
   .qa-mychk-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -8046,6 +8112,85 @@ body.mobile-nav-open {
     flex-direction: column;
     align-items: stretch;
     min-width: 0;
+  }
+
+  #btn-start-testing-top {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qa-preview-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .qa-preview-toolbar-left,
+  .qa-preview-toolbar-right {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .qa-preview-toolbar-right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .qa-mode-segmented {
+    width: 100%;
+    display: flex;
+  }
+
+  .qa-mode-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  #btn-preview-add-phase-top {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qa-runner-top-nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .qa-runner-nav-left,
+  .qa-runner-nav-right {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  #btn-runner-back-list,
+  #btn-runner-create-new {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qa-runner-controls-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .qa-runner-controls-left,
+  .qa-runner-controls-right {
+    width: 100%;
+  }
+
+  .qa-runner-controls-left .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .qa-runner-controls-right .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .qa-runner-switcher-group {
@@ -8084,6 +8229,16 @@ body.mobile-nav-open {
 }
 
 @media (max-width: 480px) {
+  .qa-gen-title {
+    font-size: 1.25rem;
+    line-height: 1.3;
+  }
+
+  .qa-gen-description {
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
   .qa-gen-hero,
   .qa-gen-editor-card,
   .qa-gen-guidance-card,
