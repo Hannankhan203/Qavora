@@ -516,7 +516,8 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       removePhaseBtn.title = 'Remove Phase';
       removePhaseBtn.setAttribute('aria-label', 'Remove Phase');
       removePhaseBtn.appendChild(ICONS.trash());
-      removePhaseBtn.addEventListener('click', () => {
+      removePhaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         plan.phases.splice(pIndex, 1);
         renderPreview();
         showNotification('Phase removed from preview.', 'info');
@@ -658,7 +659,8 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
             deleteCatBtn.title = 'Delete category and its tests';
             deleteCatBtn.setAttribute('aria-label', 'Delete category');
             deleteCatBtn.appendChild(ICONS.trash());
-            deleteCatBtn.addEventListener('click', () => {
+            deleteCatBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
               phase.sections.splice(sIndex, 1);
               renderPreview();
             });
@@ -803,7 +805,8 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               deleteTestBtn.title = 'Remove test item';
               deleteTestBtn.setAttribute('aria-label', 'Remove test item');
               deleteTestBtn.appendChild(ICONS.close());
-              deleteTestBtn.addEventListener('click', () => {
+              deleteTestBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 section.tests.splice(tIndex, 1);
                 renderPreview();
               });
@@ -896,7 +899,8 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
       removeNoteBtn.title = 'Remove supporting note';
       removeNoteBtn.setAttribute('aria-label', 'Remove supporting note');
       removeNoteBtn.appendChild(ICONS.close());
-      removeNoteBtn.addEventListener('click', () => {
+      removeNoteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         notesArray.splice(nIdx, 1);
         renderPreview();
       });

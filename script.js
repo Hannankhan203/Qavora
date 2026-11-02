@@ -16,7 +16,10 @@ import {
   saveAllChecklists,
   normalizeChecklistRecord,
   generateStableId,
-  comparePhaseNumbers
+  comparePhaseNumbers,
+  isQuotaExceededError,
+  isSecurityError,
+  getStorageErrorMessage
 } from './qaChecklistStore.js';
 
 (function () {
@@ -168,7 +171,8 @@ import {
     cachedTesterName: '',
 
     // Universal Confirmation Dialog State
-    pendingConfirm: null // { type: 'project'|'phase'|'suite'|'case'|'defect', id: '', parentId: '', name: '' }
+    pendingConfirm: null, // { type: 'project'|'phase'|'suite'|'case'|'defect', targetId: '', parentId: '', name: '' }
+    lastDeleteFocusedElement: null
   };
 
   // ==========================================================================
@@ -441,17 +445,28 @@ import {
     saveProjects(projects) {
       try {
         localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
-        return true;
+        return {
+          ok: true,
+          error: null,
+          isQuota: false,
+          isSecurity: false,
+          valueOf() { return true; }
+        };
       } catch (err) {
+        const isQuota = isQuotaExceededError(err);
+        const isSecurity = isSecurityError(err);
+        const errorMsg = getStorageErrorMessage(err, 'saving projects');
         console.error('TestPilot: Failed to persist projects to localStorage', err);
         if (typeof showToast === 'function') {
-          if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014 || err.number === -2147024882)) {
-            showToast('Storage Quota Exceeded: Browser storage is full. Please export a backup and delete archived records.', 'error');
-          } else {
-            showToast('Storage write failed: Unable to save changes to browser storage.', 'error');
-          }
+          showToast(isQuota ? `Storage Quota Exceeded: ${errorMsg}` : errorMsg, 'error');
         }
-        return false;
+        return {
+          ok: false,
+          error: errorMsg,
+          isQuota: isQuota,
+          isSecurity: isSecurity,
+          valueOf() { return false; }
+        };
       }
     },
 
@@ -459,7 +474,12 @@ import {
       try {
         const raw = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
         if (!raw) return [];
-        const parsed = JSON.parse(raw);
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return [];
+        }
         return Array.isArray(parsed) ? parsed : [];
       } catch (err) {
         console.error('TestPilot: Failed to read activities', err);
@@ -470,25 +490,42 @@ import {
     saveActivities(activities) {
       try {
         localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities));
-        return true;
+        return {
+          ok: true,
+          error: null,
+          isQuota: false,
+          isSecurity: false,
+          valueOf() { return true; }
+        };
       } catch (err) {
         console.error('TestPilot: Failed to persist activities', err);
-        return false;
+        return {
+          ok: false,
+          error: getStorageErrorMessage(err, 'saving activities'),
+          isQuota: isQuotaExceededError(err),
+          isSecurity: isSecurityError(err),
+          valueOf() { return false; }
+        };
       }
     },
 
     addActivity(action, targetName) {
-      const activities = this.getActivities();
-      const newEntry = {
-        id: 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        action: action,
-        target: targetName,
-        timestamp: new Date().toISOString()
-      };
-      activities.unshift(newEntry);
-      if (activities.length > 60) activities.length = 60;
-      this.saveActivities(activities);
-      return newEntry;
+      try {
+        const activities = this.getActivities();
+        const newEntry = {
+          id: 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+          action: action,
+          target: targetName,
+          timestamp: new Date().toISOString()
+        };
+        activities.unshift(newEntry);
+        if (activities.length > 60) activities.length = 60;
+        this.saveActivities(activities);
+        return newEntry;
+      } catch (err) {
+        console.warn('TestPilot: Unable to record activity', err);
+        return null;
+      }
     },
 
     clearActivities() {
@@ -5132,6 +5169,7 @@ import {
     const projects = Storage.getProjects();
 
     State.pendingConfirm = { type, targetId, parentId };
+    State.lastDeleteFocusedElement = document.activeElement;
 
     if (type === 'project') {
       const proj = projects.find(p => p.id === targetId);
@@ -5143,13 +5181,17 @@ import {
       }
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Project';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = proj.name;
+      if (DOM.deleteConfirmBtnText) DOM.deleteConfirmBtnText.textContent = 'Delete Project';
       if (DOM.deleteWarningMsg) {
         DOM.deleteWarningMsg.textContent = 'This action will permanently delete this project and all its associated test plans, testing phases, suites, and test cases.';
       }
     } else if (type === 'phase') {
       const proj = projects.find(p => p.id === parentId);
       const phase = (proj?.testPlan?.phases || []).find(ph => ph.id === targetId);
-      if (!phase) return;
+      if (!phase) {
+        State.pendingConfirm = null;
+        return;
+      }
 
       const attachedSuites = (proj?.testSuites || []).filter(s => s.phaseId === phase.id);
       let attachedCases = 0;
@@ -5157,18 +5199,23 @@ import {
 
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Testing Phase';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = `phase "${phase.name}"`;
+      if (DOM.deleteConfirmBtnText) DOM.deleteConfirmBtnText.textContent = 'Delete Phase';
       if (DOM.deleteWarningMsg) {
         DOM.deleteWarningMsg.textContent = `Deleting this phase will also delete all ${attachedSuites.length} test suites and ${attachedCases} test cases attached to it.`;
       }
     } else if (type === 'suite') {
       const proj = projects.find(p => p.id === parentId);
       const suite = (proj?.testSuites || []).find(s => s.id === targetId);
-      if (!suite) return;
+      if (!suite) {
+        State.pendingConfirm = null;
+        return;
+      }
 
       const casesCount = (suite.testCases || []).length;
 
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Test Suite';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = `suite "${suite.name}"`;
+      if (DOM.deleteConfirmBtnText) DOM.deleteConfirmBtnText.textContent = 'Delete Suite';
       if (DOM.deleteWarningMsg) {
         DOM.deleteWarningMsg.textContent = `Deleting this suite will permanently delete all ${casesCount} individual test cases inside it.`;
       }
@@ -5176,29 +5223,47 @@ import {
       const proj = projects.find(p => (p.testSuites || []).some(s => s.id === parentId)) || projects.find(p => p.id === State.activePlanProjectId);
       const suite = (proj?.testSuites || []).find(s => s.id === parentId);
       const tc = (suite?.testCases || []).find(c => c.id === targetId);
-      if (!tc) return;
+      if (!tc) {
+        State.pendingConfirm = null;
+        return;
+      }
 
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Test Case';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = `${tc.id} (${tc.title})`;
+      if (DOM.deleteConfirmBtnText) DOM.deleteConfirmBtnText.textContent = 'Delete Test Case';
       if (DOM.deleteWarningMsg) {
         DOM.deleteWarningMsg.textContent = 'This test case and its verification steps will be permanently removed.';
       }
     } else if (type === 'defect') {
       const proj = projects.find(p => p.id === parentId);
       const df = (proj?.defects || []).find(d => d.id === targetId);
-      if (!df) return;
+      if (!df) {
+        State.pendingConfirm = null;
+        return;
+      }
 
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Defect';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = `${df.id}: ${df.title}`;
+      if (DOM.deleteConfirmBtnText) DOM.deleteConfirmBtnText.textContent = 'Delete Defect';
       if (DOM.deleteWarningMsg) {
         DOM.deleteWarningMsg.textContent = 'This defect record will be permanently deleted and unlinked from associated test cases and test execution runs.';
       }
+    }
+
+    if (DOM.deleteConfirmBtn) {
+      DOM.deleteConfirmBtn.disabled = false;
     }
 
     if (DOM.deleteModal) {
       DOM.deleteModal.classList.add('open');
       DOM.deleteModal.setAttribute('aria-hidden', 'false');
     }
+
+    setTimeout(() => {
+      if (DOM.deleteCancelBtn) {
+        DOM.deleteCancelBtn.focus();
+      }
+    }, 0);
   }
 
   function closeDeleteModal() {
@@ -5206,13 +5271,26 @@ import {
     DOM.deleteModal.classList.remove('open');
     DOM.deleteModal.setAttribute('aria-hidden', 'true');
     State.pendingConfirm = null;
+    if (DOM.deleteConfirmBtn) {
+      DOM.deleteConfirmBtn.disabled = false;
+    }
+    const prevFocus = State.lastDeleteFocusedElement;
+    State.lastDeleteFocusedElement = null;
+    if (prevFocus && typeof prevFocus.focus === 'function' && document.contains(prevFocus)) {
+      prevFocus.focus();
+    }
   }
 
   function executeUniversalDelete() {
     if (!State.pendingConfirm) return;
-    const { type, targetId, parentId } = State.pendingConfirm;
+    if (DOM.deleteConfirmBtn) {
+      DOM.deleteConfirmBtn.disabled = true;
+    }
 
-    const projects = Storage.getProjects();
+    try {
+      const { type, targetId, parentId } = State.pendingConfirm;
+
+      const projects = Storage.getProjects();
 
     if (type === 'project') {
       const targetProj = projects.find(p => p.id === targetId);
@@ -5365,6 +5443,11 @@ import {
     if (State.currentView === 'project-details' && State.currentDetailProjectId) {
       const p = Storage.getProjects().find(x => x.id === State.currentDetailProjectId);
       if (p) renderProjectDetailsData(p);
+    }
+    } finally {
+      if (DOM.deleteConfirmBtn) {
+        DOM.deleteConfirmBtn.disabled = false;
+      }
     }
   }
 
@@ -8005,6 +8088,8 @@ import {
     if (!DOM.resetConfirmModal) return;
     DOM.resetConfirmModal.classList.remove('open');
     DOM.resetConfirmModal.setAttribute('aria-hidden', 'true');
+    if (DOM.resetConfirmCheckbox) DOM.resetConfirmCheckbox.checked = false;
+    if (DOM.resetModalConfirmBtn) DOM.resetModalConfirmBtn.disabled = true;
   }
 
   function executeWorkspaceReset() {
@@ -8602,8 +8687,14 @@ import {
       if (modal) {
         modal.addEventListener('click', (e) => {
           if (e.target === modal) {
-            modal.classList.remove('open');
-            modal.setAttribute('aria-hidden', 'true');
+            if (modal === DOM.deleteModal) {
+              closeDeleteModal();
+            } else if (modal === DOM.resetConfirmModal) {
+              closeResetConfirmModal();
+            } else {
+              modal.classList.remove('open');
+              modal.setAttribute('aria-hidden', 'true');
+            }
           }
         });
       }
@@ -8622,6 +8713,12 @@ import {
 
       if (e.key === 'Escape') {
         closeMobileSidebar();
+        if (DOM.deleteModal && DOM.deleteModal.classList.contains('open')) {
+          closeDeleteModal();
+        }
+        if (DOM.resetConfirmModal && DOM.resetConfirmModal.classList.contains('open')) {
+          closeResetConfirmModal();
+        }
         [
           DOM.projectModal,
           DOM.testplanModal,
@@ -8629,19 +8726,35 @@ import {
           DOM.suiteModal,
           DOM.testcaseModal,
           DOM.testcaseViewModal,
-          DOM.deleteModal,
           DOM.executionModal,
           DOM.executionHistoryModal,
           DOM.defectModal,
           DOM.defectViewModal,
-          DOM.importPreviewModal,
-          DOM.resetConfirmModal
+          DOM.importPreviewModal
         ].forEach(modal => {
           if (modal && modal.classList.contains('open')) {
             modal.classList.remove('open');
             modal.setAttribute('aria-hidden', 'true');
           }
         });
+        return;
+      }
+
+      if (e.key === 'Tab' && DOM.deleteModal && DOM.deleteModal.classList.contains('open')) {
+        const focusable = Array.from(
+          DOM.deleteModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     });
 

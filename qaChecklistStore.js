@@ -52,16 +52,53 @@ export function setStorageAdapterForTesting(adapterOrNull) {
   customStorageAdapter = adapterOrNull;
 }
 
+export function isQuotaExceededError(err) {
+  if (!err) return false;
+  return Boolean(
+    err.name === 'QuotaExceededError' ||
+    err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    err.code === 22 ||
+    err.code === 1014 ||
+    err.number === -2147024882 ||
+    (typeof err.message === 'string' && /quota|exceeded/i.test(err.message))
+  );
+}
+
+export function isSecurityError(err) {
+  if (!err) return false;
+  return Boolean(
+    err.name === 'SecurityError' ||
+    err.code === 18 ||
+    (typeof err.message === 'string' && /security|denied|insecure|permission/i.test(err.message))
+  );
+}
+
+export function getStorageErrorMessage(err, context = 'saving data') {
+  if (isQuotaExceededError(err)) {
+    return 'Browser storage is full or has insufficient available space. The latest changes could not be saved. Previously saved data remains available. Please export a backup and free storage space before retrying.';
+  }
+  if (isSecurityError(err)) {
+    return 'Storage access is restricted or denied by your browser security settings (e.g. strict private browsing mode). Changes cannot be saved to browser storage.';
+  }
+  if (err && typeof err.message === 'string' && err.message.trim()) {
+    return `Storage write failed during ${context}: ${err.message}`;
+  }
+  return `Storage write failed during ${context}: Unable to save changes to browser storage.`;
+}
+
 function getStorageBackend() {
   if (customStorageAdapter) {
     return { backend: customStorageAdapter, isFallback: false };
   }
   try {
-    if (typeof window !== 'undefined' && window.localStorage) {
+    const storageCandidate = typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage
+      : (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (storageCandidate) {
       const probeKey = '__tp_qa_probe__';
-      window.localStorage.setItem(probeKey, '1');
-      window.localStorage.removeItem(probeKey);
-      return { backend: window.localStorage, isFallback: false };
+      storageCandidate.setItem(probeKey, '1');
+      storageCandidate.removeItem(probeKey);
+      return { backend: storageCandidate, isFallback: false };
     }
   } catch (_err) {
     // localStorage blocked (e.g. strict privacy mode)
@@ -553,23 +590,24 @@ export function saveAllChecklists(checklistsArray) {
     return {
       ok: true,
       isFallback,
-      error: null
+      isQuota: false,
+      isSecurity: false,
+      error: null,
+      valueOf() { return true; }
     };
   } catch (err) {
-    const isQuota =
-      err &&
-      (err.name === 'QuotaExceededError' ||
-        err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
-        err.code === 22 ||
-        err.code === 1014);
+    const isQuota = isQuotaExceededError(err);
+    const isSecurity = isSecurityError(err);
+    const errorMsg = getStorageErrorMessage(err, 'saving QA checklists');
 
     console.error('TestPilot: Failed saving QA checklists', err);
     return {
       ok: false,
       isFallback,
-      error: isQuota
-        ? 'Browser storage quota exceeded. Delete unused checklists or export old projects to free space.'
-        : 'Unable to save checklist progress to browser localStorage.'
+      isQuota,
+      isSecurity,
+      error: errorMsg,
+      valueOf() { return false; }
     };
   }
 }
@@ -593,7 +631,7 @@ export function getActiveRunnerState() {
 }
 
 export function saveActiveRunnerState(partialState) {
-  const { backend } = getStorageBackend();
+  const { backend, isFallback } = getStorageBackend();
   try {
     const current = getActiveRunnerState();
     const next = {
@@ -610,12 +648,21 @@ export function saveActiveRunnerState(partialState) {
       next.activeChecklistId === current.activeChecklistId &&
       next.lastQaView === current.lastQaView
     ) {
-      return true;
+      return { ok: true, isFallback, isQuota: false, isSecurity: false, error: null, valueOf() { return true; } };
     }
     backend.setItem(ACTIVE_RUNNER_STORAGE_KEY, JSON.stringify(next));
-    return true;
-  } catch (_err) {
-    return false;
+    return { ok: true, isFallback, isQuota: false, isSecurity: false, error: null, valueOf() { return true; } };
+  } catch (err) {
+    const isQuota = isQuotaExceededError(err);
+    const isSecurity = isSecurityError(err);
+    return {
+      ok: false,
+      isFallback,
+      isQuota,
+      isSecurity,
+      error: getStorageErrorMessage(err, 'saving active runner state'),
+      valueOf() { return false; }
+    };
   }
 }
 
@@ -741,6 +788,8 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
     return {
       ok: false,
       checklist: null,
+      isQuota: saveRes.isQuota,
+      isSecurity: saveRes.isSecurity,
       error: saveRes.error
     };
   }
@@ -765,22 +814,32 @@ function mutateChecklistById(checklistId, mutatorFn, touchUpdatedAt = true) {
     return { ok: false, checklist: null, error: 'Checklist not found.' };
   }
 
-  const target = checklists[idx];
-  const didMutate = mutatorFn(target);
+  const targetOriginal = checklists[idx];
+  const targetClone = JSON.parse(JSON.stringify(targetOriginal));
+  const didMutate = mutatorFn(targetClone);
   if (didMutate === false) {
-    return { ok: false, checklist: target, error: 'Requested item could not be found.' };
+    return { ok: false, checklist: targetOriginal, error: 'Requested item could not be found.' };
   }
 
   if (touchUpdatedAt) {
-    target.updatedAt = new Date().toISOString();
+    targetClone.updatedAt = new Date().toISOString();
   }
 
-  const saveRes = saveAllChecklists(checklists);
+  const nextList = [...checklists];
+  nextList[idx] = targetClone;
+
+  const saveRes = saveAllChecklists(nextList);
   if (!saveRes.ok) {
-    return { ok: false, checklist: target, error: saveRes.error };
+    return {
+      ok: false,
+      checklist: targetOriginal,
+      isQuota: saveRes.isQuota,
+      isSecurity: saveRes.isSecurity,
+      error: saveRes.error
+    };
   }
 
-  return { ok: true, checklist: target, error: null };
+  return { ok: true, checklist: targetClone, error: null };
 }
 
 export function toggleChecklistTest(checklistId, targetTestId, completedState) {
@@ -857,7 +916,13 @@ export function deleteChecklistById(checklistId) {
 
   const saveRes = saveAllChecklists(nextList);
   if (!saveRes.ok) {
-    return { ok: false, remaining: checklists, error: saveRes.error };
+    return {
+      ok: false,
+      remaining: checklists,
+      isQuota: saveRes.isQuota,
+      isSecurity: saveRes.isSecurity,
+      error: saveRes.error
+    };
   }
 
   const activeState = getActiveRunnerState();

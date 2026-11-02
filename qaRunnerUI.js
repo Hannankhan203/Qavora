@@ -172,10 +172,14 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
 
     // Delete Checklist Confirmation Modal
     deleteModal: document.getElementById('qa-checklist-delete-modal'),
+    deleteModalHeading: document.getElementById('qa-chk-delete-heading'),
+    deleteModalSubtitle: document.getElementById('qa-chk-delete-subtitle'),
     deleteModalClose: document.getElementById('qa-chk-delete-close'),
     deleteModalCancel: document.getElementById('qa-chk-delete-cancel'),
     deleteModalConfirm: document.getElementById('qa-chk-delete-confirm'),
-    deleteModalTitleSpan: document.getElementById('qa-chk-delete-name')
+    deleteModalConfirmText: document.getElementById('qa-chk-delete-confirm-text') || document.querySelector('#qa-chk-delete-confirm span'),
+    deleteModalTitleSpan: document.getElementById('qa-chk-delete-name'),
+    deleteModalScopeNote: document.getElementById('qa-chk-delete-scope-note')
   };
 
   const UIState = {
@@ -183,6 +187,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     runnerEditMode: false,
     renamingCardId: null,
     pendingDeleteChecklistId: null,
+    pendingDelete: null, // { type: 'checklist' | 'phase' | 'test', checklistId, phaseId, testId, title }
     pendingAddTestTarget: null, // { phaseId, sectionId }
     listSearchQuery: '',
     lastFocusedElement: null
@@ -483,7 +488,8 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       const delTxt = document.createElement('span');
       delTxt.textContent = 'Delete Checklist';
       deleteBtn.appendChild(delTxt);
-      deleteBtn.addEventListener('click', () => {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         openDeleteChecklistModal(chk);
       });
 
@@ -503,9 +509,116 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   // ==========================================================================
   function openDeleteChecklistModal(checklist) {
     UIState.lastFocusedElement = document.activeElement;
+    UIState.pendingDelete = {
+      type: 'checklist',
+      checklistId: checklist.id,
+      title: checklist.title
+    };
     UIState.pendingDeleteChecklistId = checklist.id;
+
+    if (els.deleteModalHeading) {
+      els.deleteModalHeading.textContent = 'Delete QA Checklist';
+    }
+    if (els.deleteModalSubtitle) {
+      els.deleteModalSubtitle.textContent = 'Confirm checklist removal';
+    }
     if (els.deleteModalTitleSpan) {
       els.deleteModalTitleSpan.textContent = checklist.title;
+    }
+    if (els.deleteModalScopeNote) {
+      els.deleteModalScopeNote.textContent = 'Other saved checklists and TestPilot projects will not be affected.';
+    }
+    const confirmSpan = els.deleteModalConfirmText || document.querySelector('#qa-chk-delete-confirm span');
+    if (confirmSpan) {
+      confirmSpan.textContent = 'Delete Checklist';
+    }
+    if (els.deleteModalConfirm) {
+      els.deleteModalConfirm.disabled = false;
+    }
+    if (els.deleteModal) {
+      els.deleteModal.classList.add('open');
+      els.deleteModal.setAttribute('aria-hidden', 'false');
+    }
+    setTimeout(() => {
+      if (els.deleteModalCancel) {
+        els.deleteModalCancel.focus();
+      }
+    }, 0);
+  }
+
+  function openDeletePhaseModal(checklistId, phase) {
+    UIState.lastFocusedElement = document.activeElement;
+    const phaseLabel = phase.name || phase.phaseLabel || 'this phase';
+    const totalTests = (phase.sections || []).reduce((sum, s) => sum + (s.tests ? s.tests.length : 0), 0);
+    UIState.pendingDelete = {
+      type: 'phase',
+      checklistId,
+      phaseId: phase.id,
+      title: phaseLabel
+    };
+    UIState.pendingDeleteChecklistId = null;
+
+    if (els.deleteModalHeading) {
+      els.deleteModalHeading.textContent = 'Delete Testing Phase';
+    }
+    if (els.deleteModalSubtitle) {
+      els.deleteModalSubtitle.textContent = 'Confirm phase removal';
+    }
+    if (els.deleteModalTitleSpan) {
+      els.deleteModalTitleSpan.textContent = `phase "${phaseLabel}"`;
+    }
+    if (els.deleteModalScopeNote) {
+      els.deleteModalScopeNote.textContent = totalTests > 0
+        ? `This will permanently remove this phase along with its ${totalTests} test case${totalTests > 1 ? 's' : ''} and execution progress.`
+        : 'This will permanently remove this phase.';
+    }
+    const confirmSpan = els.deleteModalConfirmText || document.querySelector('#qa-chk-delete-confirm span');
+    if (confirmSpan) {
+      confirmSpan.textContent = 'Delete Phase';
+    }
+    if (els.deleteModalConfirm) {
+      els.deleteModalConfirm.disabled = false;
+    }
+    if (els.deleteModal) {
+      els.deleteModal.classList.add('open');
+      els.deleteModal.setAttribute('aria-hidden', 'false');
+    }
+    setTimeout(() => {
+      if (els.deleteModalCancel) {
+        els.deleteModalCancel.focus();
+      }
+    }, 0);
+  }
+
+  function openDeleteTestModal(checklistId, tc) {
+    UIState.lastFocusedElement = document.activeElement;
+    const testDisplay = tc.testId ? `${tc.testId}: ${tc.text || 'Test Item'}` : (tc.text || 'Test Item');
+    UIState.pendingDelete = {
+      type: 'test',
+      checklistId,
+      testId: tc.id,
+      title: testDisplay
+    };
+    UIState.pendingDeleteChecklistId = null;
+
+    if (els.deleteModalHeading) {
+      els.deleteModalHeading.textContent = 'Delete Test Item';
+    }
+    if (els.deleteModalSubtitle) {
+      els.deleteModalSubtitle.textContent = 'Confirm test removal';
+    }
+    if (els.deleteModalTitleSpan) {
+      els.deleteModalTitleSpan.textContent = testDisplay;
+    }
+    if (els.deleteModalScopeNote) {
+      els.deleteModalScopeNote.textContent = 'This test item and its execution status will be permanently removed.';
+    }
+    const confirmSpan = els.deleteModalConfirmText || document.querySelector('#qa-chk-delete-confirm span');
+    if (confirmSpan) {
+      confirmSpan.textContent = 'Delete Test';
+    }
+    if (els.deleteModalConfirm) {
+      els.deleteModalConfirm.disabled = false;
     }
     if (els.deleteModal) {
       els.deleteModal.classList.add('open');
@@ -519,7 +632,11 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   }
 
   function closeDeleteChecklistModal() {
+    UIState.pendingDelete = null;
     UIState.pendingDeleteChecklistId = null;
+    if (els.deleteModalConfirm) {
+      els.deleteModalConfirm.disabled = false;
+    }
     if (els.deleteModal) {
       els.deleteModal.classList.remove('open');
       els.deleteModal.setAttribute('aria-hidden', 'true');
@@ -532,24 +649,65 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   }
 
   function confirmDeleteChecklist() {
-    if (!UIState.pendingDeleteChecklistId) return;
-    const targetId = UIState.pendingDeleteChecklistId;
-    const res = deleteChecklistById(targetId);
-    closeDeleteChecklistModal();
+    const pending = UIState.pendingDelete;
+    const type = pending ? pending.type : (UIState.pendingDeleteChecklistId ? 'checklist' : null);
+    if (!type) return;
 
-    if (!res.ok) {
-      showMsg(res.error || 'Could not delete checklist.', 'error');
-      return;
+    if (els.deleteModalConfirm) {
+      els.deleteModalConfirm.disabled = true;
     }
 
-    if (UIState.activeChecklistId === targetId) {
-      UIState.activeChecklistId = res.remaining.length > 0 ? res.remaining[0].id : null;
-    }
+    try {
+      if (type === 'checklist') {
+        const targetId = pending ? pending.checklistId : UIState.pendingDeleteChecklistId;
+        const res = deleteChecklistById(targetId);
+        closeDeleteChecklistModal();
 
-    refreshGlobalBadgesAndBanners();
-    renderMyChecklistsView();
-    renderRunnerView();
-    showMsg('Checklist deleted.', 'info');
+        if (!res.ok) {
+          showMsg(res.error || 'Could not delete checklist.', 'error');
+          return;
+        }
+
+        if (UIState.activeChecklistId === targetId) {
+          UIState.activeChecklistId = res.remaining.length > 0 ? res.remaining[0].id : null;
+        }
+
+        refreshGlobalBadgesAndBanners();
+        renderMyChecklistsView();
+        renderRunnerView();
+        showMsg('Checklist deleted.', 'info');
+      } else if (type === 'phase') {
+        const { checklistId, phaseId } = pending;
+        const res = removePhaseFromChecklist(checklistId, phaseId);
+        closeDeleteChecklistModal();
+
+        if (!res.ok) {
+          showMsg(res.error || 'Could not delete phase.', 'error');
+          return;
+        }
+
+        renderRunnerView();
+        refreshGlobalBadgesAndBanners();
+        showMsg('Phase removed and progress updated.', 'info');
+      } else if (type === 'test') {
+        const { checklistId, testId } = pending;
+        const res = removeTestFromChecklist(checklistId, testId);
+        closeDeleteChecklistModal();
+
+        if (!res.ok) {
+          showMsg(res.error || 'Could not remove test.', 'error');
+          return;
+        }
+
+        renderRunnerView();
+        refreshGlobalBadgesAndBanners();
+        showMsg('Test removed and progress recalculated.', 'info');
+      }
+    } finally {
+      if (els.deleteModalConfirm) {
+        els.deleteModalConfirm.disabled = false;
+      }
+    }
   }
 
   // ==========================================================================
@@ -642,6 +800,10 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     const res = toggleChecklistTest(checklistId, testId, isChecked);
     if (!res.ok || !res.checklist) {
       showMsg(res.error || 'Failed to save test progress.', 'error');
+      const chkInput = rowEl ? rowEl.querySelector('input[type="checkbox"]') : null;
+      if (chkInput) {
+        chkInput.checked = !isChecked;
+      }
       return;
     }
 
@@ -780,6 +942,8 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         if (res.ok) {
           tc.testId = idInput.value.trim();
           updateRunnerOverallDOM(res.checklist);
+        } else {
+          showMsg(res.error || 'Storage is full: Test ID changes could not be saved.', 'error');
         }
       });
 
@@ -795,6 +959,8 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         if (res.ok) {
           tc.text = trimmed;
           updateRunnerOverallDOM(res.checklist);
+        } else {
+          showMsg(res.error || 'Storage is full: Test description changes could not be saved.', 'error');
         }
       });
       textInput.addEventListener('blur', () => {
@@ -822,10 +988,14 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         prioSelect.appendChild(opt);
       }
       prioSelect.addEventListener('change', () => {
+        const prevPrio = tc.priority;
         const res = updateTestInChecklist(checklist.id, tc.id, { priority: prioSelect.value });
         if (res.ok) {
           tc.priority = prioSelect.value;
           updateRunnerOverallDOM(res.checklist);
+        } else {
+          prioSelect.value = prevPrio !== undefined && prevPrio !== null ? String(prevPrio) : '';
+          showMsg(res.error || 'Storage is full: Priority change could not be saved.', 'error');
         }
       });
 
@@ -835,13 +1005,9 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       removeBtn.title = 'Remove this test';
       removeBtn.setAttribute('aria-label', 'Remove test');
       removeBtn.appendChild(ICONS.trash());
-      removeBtn.addEventListener('click', () => {
-        const res = removeTestFromChecklist(checklist.id, tc.id);
-        if (res.ok) {
-          renderRunnerView();
-          refreshGlobalBadgesAndBanners();
-          showMsg('Test removed and progress recalculated.', 'info');
-        }
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDeleteTestModal(checklist.id, tc);
       });
 
       row.appendChild(idInput);
@@ -1061,6 +1227,8 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
           if (res.ok) {
             phase.phaseLabel = lblIn.value.trim();
             updateRunnerOverallDOM(res.checklist);
+          } else {
+            showMsg(res.error || 'Storage is full: Phase label changes could not be saved.', 'error');
           }
         });
 
@@ -1076,6 +1244,8 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
           if (res.ok) {
             phase.name = trimmed;
             updateRunnerOverallDOM(res.checklist);
+          } else {
+            showMsg(res.error || 'Storage is full: Phase name changes could not be saved.', 'error');
           }
         });
         nameIn.addEventListener('blur', () => {
@@ -1164,11 +1334,9 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
         delPhaseBtn.title = 'Remove Phase';
         delPhaseBtn.setAttribute('aria-label', 'Remove Phase');
         delPhaseBtn.appendChild(ICONS.trash());
-        delPhaseBtn.addEventListener('click', () => {
-          removePhaseFromChecklist(activeChecklist.id, phase.id);
-          renderRunnerView();
-          refreshGlobalBadgesAndBanners();
-          showMsg('Phase removed and progress updated.', 'info');
+        delPhaseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openDeletePhaseModal(activeChecklist.id, phase);
         });
         headerRight.appendChild(delPhaseBtn);
       }

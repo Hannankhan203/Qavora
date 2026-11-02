@@ -4838,7 +4838,7 @@
           </div>
           <div>
             <h3 id="qa-chk-delete-heading" class="modal-title">Delete QA Checklist</h3>
-            <p class="modal-subtitle">Confirm checklist removal</p>
+            <p id="qa-chk-delete-subtitle" class="modal-subtitle">Confirm checklist removal</p>
           </div>
         </div>
         <button type="button" id="qa-chk-delete-close" class="modal-close-btn" aria-label="Close dialog">
@@ -4850,12 +4850,12 @@
       </div>
       <div class="modal-form">
         <p class="case-detail-text">
-          Are you sure you want to permanently delete <strong id="qa-chk-delete-name">this checklist</strong>? Other saved checklists and TestPilot projects will not be affected.
+          Are you sure you want to permanently delete <strong id="qa-chk-delete-name">this checklist</strong>? <span id="qa-chk-delete-scope-note">Other saved checklists and TestPilot projects will not be affected.</span>
         </p>
         <div class="modal-footer">
           <button type="button" id="qa-chk-delete-cancel" class="btn btn-ghost">Cancel</button>
           <button type="button" id="qa-chk-delete-confirm" class="btn btn-danger">
-            <span>Delete Checklist</span>
+            <span id="qa-chk-delete-confirm-text">Delete Checklist</span>
           </button>
         </div>
       </div>
