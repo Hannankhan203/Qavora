@@ -15,7 +15,8 @@ import {
   loadAllChecklists,
   saveAllChecklists,
   normalizeChecklistRecord,
-  generateStableId
+  generateStableId,
+  comparePhaseNumbers
 } from './qaChecklistStore.js';
 
 (function () {
@@ -190,7 +191,18 @@ import {
         }
         if (!Array.isArray(parsed)) return [];
 
-        return parsed.map((p, pIdx) => {
+        let needsPersistence = false;
+
+        const normalizedProjects = parsed.map((rawP, pIdx) => {
+          const p = (rawP && typeof rawP === 'object') ? rawP : {};
+          let projId = (p.id !== undefined && p.id !== null && String(p.id).trim() !== '')
+            ? String(p.id).trim()
+            : null;
+          if (!projId) {
+            projId = 'proj_' + Date.now() + '_' + pIdx + '_' + Math.random().toString(36).substring(2, 7);
+            needsPersistence = true;
+          }
+
           const createdAt = p.createdAt || new Date().toISOString();
           const updatedAt = p.updatedAt || createdAt;
 
@@ -204,7 +216,7 @@ import {
           })) : [];
 
           const testPlan = {
-            id: rawPlan.id || ('plan_' + (p.id || pIdx)),
+            id: rawPlan.id || ('plan_' + projId),
             name: rawPlan.name || (p.name ? `${p.name} Master Test Plan` : 'Master Manual QA Plan'),
             description: typeof rawPlan.description === 'string' ? rawPlan.description.trim() : '',
             objective: typeof rawPlan.objective === 'string' ? rawPlan.objective.trim() : '',
@@ -324,7 +336,7 @@ import {
           const openDefectsCount = defects.filter(d => ['Open', 'In Progress', 'Reopened'].includes(d.status)).length;
 
           return {
-            id: p.id || ('proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)),
+            id: projId,
             name: p.name || 'Untitled Project',
             type: VALID_PROJECT_TYPES.includes(p.type) ? p.type : 'Other',
             status: VALID_STATUSES.includes(p.status) ? p.status : 'Active',
@@ -349,6 +361,16 @@ import {
             defects: defects
           };
         });
+
+        if (needsPersistence) {
+          try {
+            Storage.saveProjects(normalizedProjects);
+          } catch (persistErr) {
+            console.error('TestPilot: Failed to auto-persist generated project IDs', persistErr);
+          }
+        }
+
+        return normalizedProjects;
       } catch (err) {
         console.error('TestPilot: Failed to read projects from localStorage', err);
         return [];
@@ -1029,6 +1051,22 @@ import {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function sanitizeExternalUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') return '';
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return '';
+
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.href;
+      }
+    } catch {
+      return '';
+    }
+    return '';
   }
 
   function formatRelativeTime(isoString) {
@@ -2028,8 +2066,15 @@ import {
       return;
     }
 
-    // Sort phases by order
-    const sortedPhases = [...phases].sort((a, b) => a.order - b.order);
+    // Sort phases by order, falling back to numeric phase comparison
+    const sortedPhases = [...phases].sort((a, b) => {
+      const orderA = typeof a.order === 'number' ? a.order : (typeof a.order === 'string' && a.order.trim() ? parseFloat(a.order) : null);
+      const orderB = typeof b.order === 'number' ? b.order : (typeof b.order === 'string' && b.order.trim() ? parseFloat(b.order) : null);
+      if (orderA !== null && orderB !== null && !Number.isNaN(orderA) && !Number.isNaN(orderB) && orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return comparePhaseNumbers(a.phaseNumber || a.name || '', b.phaseNumber || b.name || '');
+    });
 
     let html = '';
 
@@ -3444,7 +3489,10 @@ import {
     if (DOM.execFilterPhase) {
       let phaseHtml = '<option value="ALL">All Phases</option>';
       phases.forEach((ph, idx) => {
-        phaseHtml += `<option value="${escapeHTML(ph.id)}" ${State.execPhaseFilter === ph.id ? 'selected' : ''}>Phase ${idx + 1}: ${escapeHTML(ph.name)}</option>`;
+        const phDisplayName = ph.name
+          ? (ph.name.toLowerCase().startsWith('phase') ? escapeHTML(ph.name) : `Phase ${idx + 1}: ${escapeHTML(ph.name)}`)
+          : `Phase ${idx + 1}`;
+        phaseHtml += `<option value="${escapeHTML(ph.id)}" ${State.execPhaseFilter === ph.id ? 'selected' : ''}>${phDisplayName}</option>`;
       });
       DOM.execFilterPhase.innerHTML = phaseHtml;
     }
@@ -4533,6 +4581,11 @@ import {
         ? `<span class="case-id-tag btn-inspect-linked-test" data-project-id="${escapeHTML(df.projectId)}" data-case-id="${escapeHTML(df.testCaseId)}" style="cursor: pointer;" title="Inspect linked test case ${escapeHTML(df.testCaseId)}">${escapeHTML(df.testCaseId)}</span>`
         : `<span style="color: var(--text-muted); font-size: 0.76rem;">Independent</span>`;
 
+      const safeExternalUrl = sanitizeExternalUrl(df.externalIssueUrl);
+      const externalLinkHtml = safeExternalUrl
+        ? `<a href="${escapeHTML(safeExternalUrl)}" target="_blank" rel="noopener noreferrer" class="link-external" style="font-size: 0.72rem; margin-top: 2px;">External Issue</a>`
+        : '';
+
       html += `
         <tr class="case-table-row" data-defect-id="${escapeHTML(df.id)}" data-project-id="${escapeHTML(df.projectId)}">
           <td>
@@ -4541,7 +4594,7 @@ import {
           <td>
             <div class="case-title-cell">
               <span class="case-title-text" style="font-weight: 600;" title="${escapeHTML(df.title)}">${escapeHTML(df.title)}</span>
-              ${df.externalIssueUrl ? `<a href="${escapeHTML(df.externalIssueUrl)}" target="_blank" rel="noopener noreferrer" class="link-external" style="font-size: 0.72rem; margin-top: 2px;">External Issue</a>` : ''}
+              ${externalLinkHtml}
             </div>
           </td>
           <td>
@@ -4920,12 +4973,15 @@ import {
     }
 
     if (DOM.viewDefectUrlWrap && DOM.viewDefectUrlLink && DOM.viewDefectUrlText) {
-      if (df.externalIssueUrl) {
+      const safeUrl = sanitizeExternalUrl(df.externalIssueUrl);
+      if (safeUrl) {
         DOM.viewDefectUrlWrap.style.display = 'block';
-        DOM.viewDefectUrlLink.href = df.externalIssueUrl;
-        DOM.viewDefectUrlText.textContent = df.externalIssueUrl;
+        DOM.viewDefectUrlLink.href = safeUrl;
+        DOM.viewDefectUrlText.textContent = safeUrl;
       } else {
         DOM.viewDefectUrlWrap.style.display = 'none';
+        DOM.viewDefectUrlLink.removeAttribute('href');
+        DOM.viewDefectUrlText.textContent = '';
       }
     }
 
@@ -4947,6 +5003,9 @@ import {
     if (!DOM.defectViewModal) return;
     DOM.defectViewModal.classList.remove('open');
     DOM.defectViewModal.setAttribute('aria-hidden', 'true');
+    if (DOM.viewDefectUrlLink) {
+      DOM.viewDefectUrlLink.removeAttribute('href');
+    }
   }
 
   function updateDefectQuickStatus(projectId, defectId, newStatus) {
@@ -4986,7 +5045,12 @@ import {
 
     if (type === 'project') {
       const proj = projects.find(p => p.id === targetId);
-      if (!proj) return;
+      if (!proj) {
+        State.pendingConfirm = null;
+        console.warn('TestPilot: Project not found for deletion dialog', targetId);
+        showToast('Could not find project to delete.', 'error');
+        return;
+      }
       if (DOM.deleteDialogTitle) DOM.deleteDialogTitle.textContent = 'Delete Project';
       if (DOM.deleteProjectName) DOM.deleteProjectName.textContent = proj.name;
       if (DOM.deleteWarningMsg) {
@@ -5062,16 +5126,50 @@ import {
 
     if (type === 'project') {
       const targetProj = projects.find(p => p.id === targetId);
+      if (!targetProj) {
+        console.error('TestPilot: Project deletion failed - project ID not found in storage:', targetId);
+        showToast('Failed to delete project: Project not found.', 'error');
+        closeDeleteModal();
+        return;
+      }
+
       const updated = projects.filter(p => p.id !== targetId);
       Storage.saveProjects(updated);
-      Storage.addActivity('Deleted project', targetProj ? targetProj.name : targetId);
+      Storage.addActivity('Deleted project', targetProj.name || targetId);
       showToast(`Project deleted.`, 'info');
 
-      if (State.currentView === 'project-details' && State.currentDetailProjectId === targetId) {
-        switchView('projects');
-      } else if (State.currentView === 'plans' && State.activePlanProjectId === targetId) {
-        State.activePlanProjectId = updated[0] ? updated[0].id : null;
-        renderTestPlansWorkspace();
+      // Reliably clear active-project references across all workspaces
+      if (State.currentDetailProjectId === targetId) {
+        State.currentDetailProjectId = null;
+        if (State.currentView === 'project-details') {
+          switchView('projects');
+        }
+      }
+
+      if (State.activePlanProjectId === targetId) {
+        State.activePlanProjectId = updated.length > 0 ? updated[0].id : null;
+        State.activeSuiteId = null;
+      }
+
+      if (State.activeExecProjectId === targetId) {
+        State.activeExecProjectId = updated.length > 0 ? updated[0].id : null;
+        State.execPhaseFilter = 'ALL';
+        State.execSuiteFilter = 'ALL';
+      }
+
+      if (State.activeDefectsProjectId === targetId) {
+        State.activeDefectsProjectId = 'ALL';
+      }
+
+      if (State.reportsProjectId === targetId) {
+        State.reportsProjectId = 'ALL';
+      }
+
+      if (State.modalExecContext && State.modalExecContext.projectId === targetId) {
+        State.modalExecContext = null;
+        if (typeof closeExecutionModal === 'function') {
+          closeExecutionModal();
+        }
       }
     } else if (type === 'phase') {
       const project = projects.find(p => p.id === parentId);

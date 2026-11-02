@@ -150,11 +150,86 @@ function normalizeSectionRecord(rawSec) {
 export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
   const lbl = typeof phaseLabel === 'string' ? phaseLabel.trim() : '';
   if (!lbl) return '';
-  const tokenMatch = lbl.match(/(?:#|\s)([0-9]+|[A-Za-z0-9]+)$/) || lbl.match(/^([0-9]+)$/);
+  const cleaned = lbl.replace(/[:—–\-.]+$/, '').trim();
+  const tokenMatch =
+    cleaned.match(/(?:#|\s)([0-9]+(?:\.[0-9]+)*|[A-Za-z0-9]+)$/) ||
+    cleaned.match(/^([0-9]+(?:\.[0-9]+)*)$/);
   if (tokenMatch) {
-    return tokenMatch[1].trim();
+    const token = tokenMatch[1].trim();
+    if (['phase', 'stage', 'testing', 'qa', 'unknown'].includes(token.toLowerCase())) {
+      return typeof fallbackNumber === 'string'
+        ? fallbackNumber.trim()
+        : typeof fallbackNumber === 'number'
+        ? String(fallbackNumber)
+        : '';
+    }
+    return token;
   }
-  return typeof fallbackNumber === 'string' ? fallbackNumber.trim() : '';
+  return typeof fallbackNumber === 'string'
+    ? fallbackNumber.trim()
+    : typeof fallbackNumber === 'number'
+    ? String(fallbackNumber)
+    : '';
+}
+
+export function parsePhaseNumber(val) {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : null;
+  }
+  if (typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const token = derivePhaseNumberFromLabel(trimmed, trimmed);
+  const match = token.match(/^(\d+(?:\.\d+)?)/);
+  if (match) {
+    const parsed = parseFloat(match[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function comparePhaseNumbers(numA, numB) {
+  const valA = parsePhaseNumber(numA);
+  const valB = parsePhaseNumber(numB);
+
+  if (valA !== null && valB !== null) {
+    if (valA !== valB) {
+      return valA - valB;
+    }
+    return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  if (valA !== null && valB === null) return -1;
+  if (valA === null && valB !== null) return 1;
+
+  return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export function comparePhases(phaseA, phaseB) {
+  if (!phaseA && !phaseB) return 0;
+  if (!phaseA) return 1;
+  if (!phaseB) return -1;
+
+  if (typeof phaseA.order === 'number' && typeof phaseB.order === 'number' && phaseA.order !== phaseB.order) {
+    return phaseA.order - phaseB.order;
+  }
+
+  const numA = phaseA.phaseNumber || (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
+  const numB = phaseB.phaseNumber || (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
+
+  if (numA || numB) {
+    const comp = comparePhaseNumbers(numA, numB);
+    if (comp !== 0) return comp;
+  }
+
+  const nameA = phaseA.name || '';
+  const nameB = phaseB.name || '';
+  return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export function sortPhases(phases) {
+  if (!Array.isArray(phases)) return [];
+  return [...phases].sort(comparePhases);
 }
 
 function normalizePhaseRecord(rawPhase, idx = 0) {
@@ -580,7 +655,7 @@ export function createChecklistFromParsedPlan(parsedPlan, customTitle = '') {
     return {
       id: generateStableId('phase'),
       phaseLabel: cleanedLabel,
-      phaseNumber: cleanedLabel ? derivePhaseNumberFromLabel(cleanedLabel, cleanedNum) : '',
+      phaseNumber: cleanedLabel ? derivePhaseNumberFromLabel(cleanedLabel, cleanedNum) : (cleanedNum || ''),
       name: typeof ph.name === 'string' && ph.name.trim() ? ph.name.trim() : `Phase ${pIdx + 1}`,
       isImplicit: Boolean(ph.isImplicit),
       description: typeof ph.description === 'string' ? ph.description.trim() : '',
@@ -794,6 +869,10 @@ export function updatePhaseInChecklist(checklistId, phaseId, updates = {}) {
         : '';
       phase.isImplicit = false;
     }
+    if (typeof updates.phaseNumber === 'string') {
+      phase.phaseNumber = updates.phaseNumber.trim();
+      phase.isImplicit = false;
+    }
     if (typeof updates.name === 'string') {
       const trimmedName = updates.name.trim();
       if (trimmedName) {
@@ -814,10 +893,15 @@ export function updatePhaseInChecklist(checklistId, phaseId, updates = {}) {
 export function addPhaseToChecklist(checklistId, { phaseLabel = '', name = 'New Phase', description = '' } = {}) {
   let createdPhase = null;
   const res = mutateChecklistById(checklistId, checklist => {
+    const defaultLabel = `Phase ${checklist.phases.length + 1}`;
+    const assignedLabel = phaseLabel.trim() || defaultLabel;
+    const assignedNum = phaseLabel.trim()
+      ? derivePhaseNumberFromLabel(assignedLabel, String(checklist.phases.length + 1))
+      : String(checklist.phases.length + 1);
     createdPhase = {
       id: generateStableId('phase'),
-      phaseLabel: phaseLabel.trim() || `Phase ${checklist.phases.length + 1}`,
-      phaseNumber: String(checklist.phases.length + 1),
+      phaseLabel: assignedLabel,
+      phaseNumber: assignedNum,
       name: name.trim() || 'New Phase',
       isImplicit: false,
       description: description.trim(),

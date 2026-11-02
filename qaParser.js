@@ -61,6 +61,91 @@ export function formatPhaseHeading(phase) {
   return label || name || 'Untitled Phase';
 }
 
+export function derivePhaseNumberFromLabel(phaseLabel, fallbackNumber = '') {
+  const lbl = typeof phaseLabel === 'string' ? phaseLabel.trim() : '';
+  if (!lbl) return '';
+  const cleaned = lbl.replace(/[:—–\-.]+$/, '').trim();
+  const tokenMatch =
+    cleaned.match(/(?:#|\s)([0-9]+(?:\.[0-9]+)*|[A-Za-z0-9]+)$/) ||
+    cleaned.match(/^([0-9]+(?:\.[0-9]+)*)$/);
+  if (tokenMatch) {
+    const token = tokenMatch[1].trim();
+    if (['phase', 'stage', 'testing', 'qa', 'unknown'].includes(token.toLowerCase())) {
+      return typeof fallbackNumber === 'string'
+        ? fallbackNumber.trim()
+        : typeof fallbackNumber === 'number'
+        ? String(fallbackNumber)
+        : '';
+    }
+    return token;
+  }
+  return typeof fallbackNumber === 'string'
+    ? fallbackNumber.trim()
+    : typeof fallbackNumber === 'number'
+    ? String(fallbackNumber)
+    : '';
+}
+
+export function parsePhaseNumber(val) {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : null;
+  }
+  if (typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const token = derivePhaseNumberFromLabel(trimmed, trimmed);
+  const match = token.match(/^(\d+(?:\.\d+)?)/);
+  if (match) {
+    const parsed = parseFloat(match[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function comparePhaseNumbers(numA, numB) {
+  const valA = parsePhaseNumber(numA);
+  const valB = parsePhaseNumber(numB);
+
+  if (valA !== null && valB !== null) {
+    if (valA !== valB) {
+      return valA - valB;
+    }
+    return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  if (valA !== null && valB === null) return -1;
+  if (valA === null && valB !== null) return 1;
+
+  return String(numA || '').localeCompare(String(numB || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export function comparePhases(phaseA, phaseB) {
+  if (!phaseA && !phaseB) return 0;
+  if (!phaseA) return 1;
+  if (!phaseB) return -1;
+
+  if (typeof phaseA.order === 'number' && typeof phaseB.order === 'number' && phaseA.order !== phaseB.order) {
+    return phaseA.order - phaseB.order;
+  }
+
+  const numA = phaseA.phaseNumber || (typeof phaseA.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseA.phaseLabel, '') : '');
+  const numB = phaseB.phaseNumber || (typeof phaseB.phaseLabel === 'string' ? derivePhaseNumberFromLabel(phaseB.phaseLabel, '') : '');
+
+  if (numA || numB) {
+    const comp = comparePhaseNumbers(numA, numB);
+    if (comp !== 0) return comp;
+  }
+
+  const nameA = phaseA.name || '';
+  const nameB = phaseB.name || '';
+  return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export function sortPhases(phases) {
+  if (!Array.isArray(phases)) return [];
+  return [...phases].sort(comparePhases);
+}
+
 export function computeChecklistSummary(plan) {
   if (!plan || !Array.isArray(plan.phases)) {
     return {
@@ -124,7 +209,7 @@ const LEADING_HEADING_DECORATION_RE = /^(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}
 const WORD_NUMBERS =
   'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty';
 const EXPLICIT_PHASE_RE = new RegExp(
-  `^\\[?((?:testing\\s+phase|test\\s+phase|qa\\s+phase|phase|stage)\\s+#?(?:${WORD_NUMBERS}|[0-9]+|[IVXLC]{2,}|[A-Z]))\\]?(?:\\s*(?:[—–\\-:|•.]|\\)\\s*)\\s*(.*)|\\s+(.+))?$`,
+  `^\\[?((?:testing\\s+phase|test\\s+phase|qa\\s+phase|phase|stage)\\s+#?(?:${WORD_NUMBERS}|[0-9]+(?:\\.[0-9]+)*|[IVXLC]{2,}|[A-Z]))\\]?(?:\\s*(?:[—–\\-:|•.]|\\)\\s*)\\s*(.*)|\\s+(.+))?$`,
   'i'
 );
 
@@ -354,10 +439,10 @@ function detectNumberedPhaseIndices(linesMeta) {
     const cleanNoEmoji = sourceText.replace(LEADING_HEADING_DECORATION_RE, '').trim();
     if (matchExplicitPhaseText(cleanNoEmoji)) continue;
 
-    const numMatch = cleanNoEmoji.match(/^(\d+)[.)]\s+(.+)$/);
+    const numMatch = cleanNoEmoji.match(/^(\d+(?:\.\d+)*)[.)]?\s+(.+)$/);
     if (!numMatch) continue;
 
-    const num = parseInt(numMatch[1], 10);
+    const num = parseFloat(numMatch[1]);
     const title = stripMarkdownFormatting(numMatch[2]).trim();
 
     if (!title || title.length > 100) continue;
@@ -392,19 +477,21 @@ function detectNumberedPhaseIndices(linesMeta) {
       if (matchExplicitPhaseText(nextText)) break;
       if (next.md && next.md.level <= 2) break;
 
-      const nextNumMatch = next.indent <= 1 ? next.trimmed.match(/^(\d+)[.)]\s+(.+)$/) : null;
+      const nextNumMatch = next.indent <= 1 ? next.trimmed.match(/^(\d+(?:\.\d+)*)[.)]?\s+(.+)$/) : null;
       if (nextNumMatch) {
-        const nextNum = parseInt(nextNumMatch[1], 10);
-        if (nextNum === num + 1) {
-          if (nonBlankSeen === 0) {
-            immediatePeerNext = true;
+        const nextNum = parseFloat(nextNumMatch[1]);
+        if (!Number.isNaN(nextNum) && !Number.isNaN(num)) {
+          if (nextNum > num && nextNum <= num + 1) {
+            if (nonBlankSeen === 0) {
+              immediatePeerNext = true;
+            }
+            break;
           }
-          break;
-        }
-        if (nextNum === 1 && num >= 1) {
-          restartsNumberingInside = true;
-          hasChildTestsOrCategories = true;
-          break;
+          if (nextNum === 1 && num >= 1) {
+            restartsNumberingInside = true;
+            hasChildTestsOrCategories = true;
+            break;
+          }
         }
       }
 
@@ -432,8 +519,8 @@ function detectNumberedPhaseIndices(linesMeta) {
   for (let c = 0; c < candidates.length; c += 1) {
     const item = candidates[c];
     if (item.confirmed || item.looksLikeTestSentence) continue;
-    const prevConfirmed = c > 0 && candidates[c - 1].confirmed && candidates[c - 1].num === item.num - 1;
-    const nextConfirmed = c + 1 < candidates.length && candidates[c + 1].confirmed && candidates[c + 1].num === item.num + 1;
+    const prevConfirmed = c > 0 && candidates[c - 1].confirmed && candidates[c - 1].num < item.num;
+    const nextConfirmed = c + 1 < candidates.length && candidates[c + 1].confirmed && candidates[c + 1].num > item.num;
     if (prevConfirmed || nextConfirmed) {
       numberedPhaseSet.add(item.index);
       item.confirmed = true;
@@ -603,7 +690,7 @@ export function parseQAPlanText(rawInput) {
     if (numberedPhaseIndices.has(i)) {
       const sourceText = meta.md ? meta.md.text : stripMarkdownFormatting(meta.trimmed);
       const cleanNoEmoji = sourceText.replace(LEADING_HEADING_DECORATION_RE, '').trim();
-      const m = cleanNoEmoji.match(/^(\d+)[.)]\s+(.+)$/);
+      const m = cleanNoEmoji.match(/^(\d+(?:\.\d+)*)[.)]?\s+(.+)$/);
       if (m) {
         return {
           phaseLabel: `Phase ${m[1]}`,
