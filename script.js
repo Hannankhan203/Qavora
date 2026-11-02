@@ -9007,6 +9007,11 @@ import {
         if (DOM.resetConfirmModal && DOM.resetConfirmModal.classList.contains('open')) {
           closeResetConfirmModal();
         }
+        const qaChkDeleteModal = document.getElementById('qa-checklist-delete-modal');
+        if (qaChkDeleteModal && qaChkDeleteModal.classList.contains('open')) {
+          const cancelBtn = document.getElementById('qa-chk-delete-cancel');
+          if (cancelBtn) cancelBtn.click();
+        }
         [
           DOM.projectModal,
           DOM.testplanModal,

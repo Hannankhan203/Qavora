@@ -539,6 +539,9 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       els.deleteModal.classList.add('open');
       els.deleteModal.setAttribute('aria-hidden', 'false');
     }
+    if (document.body) {
+      document.body.classList.add('modal-open');
+    }
     setTimeout(() => {
       if (els.deleteModalCancel) {
         els.deleteModalCancel.focus();
@@ -583,6 +586,9 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       els.deleteModal.classList.add('open');
       els.deleteModal.setAttribute('aria-hidden', 'false');
     }
+    if (document.body) {
+      document.body.classList.add('modal-open');
+    }
     setTimeout(() => {
       if (els.deleteModalCancel) {
         els.deleteModalCancel.focus();
@@ -624,6 +630,9 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       els.deleteModal.classList.add('open');
       els.deleteModal.setAttribute('aria-hidden', 'false');
     }
+    if (document.body) {
+      document.body.classList.add('modal-open');
+    }
     setTimeout(() => {
       if (els.deleteModalCancel) {
         els.deleteModalCancel.focus();
@@ -640,6 +649,13 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     if (els.deleteModal) {
       els.deleteModal.classList.remove('open');
       els.deleteModal.setAttribute('aria-hidden', 'true');
+    }
+    if (document.body) {
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+    }
+    if (document.documentElement) {
+      document.documentElement.style.overflow = '';
     }
     const prevFocus = UIState.lastFocusedElement;
     UIState.lastFocusedElement = null;
