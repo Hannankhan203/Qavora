@@ -2,13 +2,15 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — QA Checklists Persistence, Validation & Progress Store (Prompt 2)
+ * Qavora — QA Checklists Persistence, Validation & Progress Store (Prompt 2)
  * Manages browser localStorage persistence under versioned keys completely
- * independent of unrelated TestPilot project storage.
+ * independent of unrelated Qavora project storage.
  */
 
-export const CHECKLISTS_STORAGE_KEY = 'testpilot_qa_checklists_v1';
-export const ACTIVE_RUNNER_STORAGE_KEY = 'testpilot_qa_active_runner_v1';
+export const CHECKLISTS_STORAGE_KEY = 'qavora_qa_checklists_v1';
+export const ACTIVE_RUNNER_STORAGE_KEY = 'qavora_qa_active_runner_v1';
+export const LEGACY_CHECKLISTS_STORAGE_KEY = 'testpilot_qa_checklists_v1';
+export const LEGACY_ACTIVE_RUNNER_STORAGE_KEY = 'testpilot_qa_active_runner_v1';
 export const SCHEMA_VERSION = 1;
 
 export const TEST_STATUS = Object.freeze({
@@ -130,7 +132,7 @@ export function safeStorageWrite(key, serializedValue, context = 'saving data') 
     const isQuota = isQuotaExceededError(err);
     const isSecurity = isSecurityError(err);
     const errorMsg = getStorageErrorMessage(err, context);
-    console.error(`TestPilot: Storage write failed during ${context}`, err);
+    console.error(`Qavora: Storage write failed during ${context}`, err);
     return {
       ok: false,
       isFallback,
@@ -148,7 +150,7 @@ export function safeStorageRead(key) {
     const raw = backend.getItem(key);
     return { raw, isFallback, error: null };
   } catch (err) {
-    console.error(`TestPilot: Storage read failed for key ${key}`, err);
+    console.error(`Qavora: Storage read failed for key ${key}`, err);
     return { raw: null, isFallback, error: err };
   }
 }
@@ -159,7 +161,7 @@ export function safeStorageRemove(key) {
     backend.removeItem(key);
     return { ok: true, isFallback };
   } catch (err) {
-    console.error(`TestPilot: Storage removal failed for key ${key}`, err);
+    console.error(`Qavora: Storage removal failed for key ${key}`, err);
     return { ok: false, isFallback, error: err };
   }
 }
@@ -566,12 +568,67 @@ export function deriveDefaultChecklistTitle(parsedPlan) {
 }
 
 // ============================================================================
-// Storage Read / Write Operations
+// Storage Read / Write Operations & Safe Migration
 // ============================================================================
+
+/**
+ * Performs a safe, one-time backward-compatible migration from legacy TestPilot
+ * storage keys to Qavora storage keys. Existing Qavora data is never overwritten.
+ * Old keys are removed only after verified successful write to the new key.
+ */
+export function migrateLegacyChecklistStorage() {
+  const { backend } = getStorageBackend();
+  try {
+    // 1. Migrate Checklists Key
+    const currentQavoraData = backend.getItem(CHECKLISTS_STORAGE_KEY);
+    const legacyChecklistData = backend.getItem(LEGACY_CHECKLISTS_STORAGE_KEY);
+    if (!currentQavoraData && legacyChecklistData) {
+      try {
+        const parsed = JSON.parse(legacyChecklistData);
+        if (parsed) {
+          const writeRes = safeStorageWrite(CHECKLISTS_STORAGE_KEY, legacyChecklistData, 'migrating QA checklists from legacy storage');
+          if (writeRes && writeRes.ok) {
+            const verified = backend.getItem(CHECKLISTS_STORAGE_KEY);
+            if (verified === legacyChecklistData) {
+              try {
+                backend.removeItem(LEGACY_CHECKLISTS_STORAGE_KEY);
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_parseErr) {
+        // If malformed, let loadAllChecklists handle safe recovery
+      }
+    }
+
+    // 2. Migrate Active Runner State Key
+    const currentRunnerData = backend.getItem(ACTIVE_RUNNER_STORAGE_KEY);
+    const legacyRunnerData = backend.getItem(LEGACY_ACTIVE_RUNNER_STORAGE_KEY);
+    if (!currentRunnerData && legacyRunnerData) {
+      try {
+        const parsed = JSON.parse(legacyRunnerData);
+        if (parsed && typeof parsed === 'object') {
+          const writeRes = safeStorageWrite(ACTIVE_RUNNER_STORAGE_KEY, legacyRunnerData, 'migrating active runner state from legacy storage');
+          if (writeRes && writeRes.ok) {
+            const verified = backend.getItem(ACTIVE_RUNNER_STORAGE_KEY);
+            if (verified === legacyRunnerData) {
+              try {
+                backend.removeItem(LEGACY_ACTIVE_RUNNER_STORAGE_KEY);
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.warn('Qavora: Error during legacy checklist storage migration', err);
+  }
+}
 
 export function loadAllChecklists() {
   const { backend, isFallback } = getStorageBackend();
   try {
+    migrateLegacyChecklistStorage();
     const raw = backend.getItem(CHECKLISTS_STORAGE_KEY);
     if (!raw) {
       return { checklists: [], warning: isFallback ? 'Local storage is restricted; using session memory.' : null };
@@ -581,7 +638,7 @@ export function loadAllChecklists() {
     try {
       parsed = JSON.parse(raw);
     } catch (_parseErr) {
-      console.warn('TestPilot: Malformed JSON in testpilot_qa_checklists_v1; recovering safely.');
+      console.warn(`Qavora: Malformed JSON in ${CHECKLISTS_STORAGE_KEY}; recovering safely.`);
       return {
         checklists: [],
         warning: 'Stored checklist data appeared corrupted and could not be parsed. Starting with a clean state.'
@@ -620,7 +677,7 @@ export function loadAllChecklists() {
       warning: isFallback ? 'Browser localStorage is unavailable; changes will only persist for this tab session.' : null
     };
   } catch (err) {
-    console.error('TestPilot: Failed reading QA checklists', err);
+    console.error('Qavora: Failed reading QA checklists', err);
     return {
       checklists: [],
       warning: 'Unable to access browser storage.'
@@ -645,7 +702,7 @@ export function saveAllChecklists(checklistsArray) {
     const isQuota = isQuotaExceededError(err);
     const isSecurity = isSecurityError(err);
     const errorMsg = getStorageErrorMessage(err, 'saving QA checklists');
-    console.error('TestPilot: Failed saving QA checklists', err);
+    console.error('Qavora: Failed saving QA checklists', err);
     return {
       ok: false,
       isFallback: false,
@@ -660,6 +717,7 @@ export function saveAllChecklists(checklistsArray) {
 export function getActiveRunnerState() {
   const { backend } = getStorageBackend();
   try {
+    migrateLegacyChecklistStorage();
     const raw = backend.getItem(ACTIVE_RUNNER_STORAGE_KEY);
     if (!raw) return { activeChecklistId: null, lastQaView: null };
     const parsed = JSON.parse(raw);

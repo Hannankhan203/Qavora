@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — QA Checklist Generator & Editable Preview Controller (Prompt 1)
+ * Qavora — QA Checklist Generator & Editable Preview Controller (Prompt 1)
  * Uses 100% safe DOM construction (createElement / textContent / value) —
  * never injects user-pasted content via innerHTML.
  */

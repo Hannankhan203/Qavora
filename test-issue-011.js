@@ -244,7 +244,7 @@ setStorageAdapterForTesting(mockProjectsStore);
 const existingProjects = [
   { id: 'proj_exist_1', name: 'Existing Project 1', testSuites: [], testPlan: { phases: [] } }
 ];
-safeStorageWrite('testpilot_projects_v1', JSON.stringify(existingProjects));
+safeStorageWrite('qavora_projects_v1', JSON.stringify(existingProjects));
 
 // Simulate storage full during new project creation
 mockProjectsStore.setFailWrites(true, 'quota');
@@ -256,7 +256,7 @@ const newCandidateProject = {
   testPlan: { phases: [] }
 };
 const nextProjectsList = [newCandidateProject, ...existingProjects];
-const createProjRes = safeStorageWrite('testpilot_projects_v1', JSON.stringify(nextProjectsList), 'saving projects');
+const createProjRes = safeStorageWrite('qavora_projects_v1', JSON.stringify(nextProjectsList), 'saving projects');
 
 assert.strictEqual(createProjRes.ok, false, 'Project write must report failure');
 assert.strictEqual(createProjRes.isQuota, true, 'Project write marked as quota failure');
@@ -264,7 +264,7 @@ assert(createProjRes.error.includes('Browser storage is full'), 'Error contains 
 
 // Storage in mockProjectsStore must still have only 1 project
 mockProjectsStore.setFailWrites(false);
-const rawProjectsAfterFail = JSON.parse(mockProjectsStore.getItem('testpilot_projects_v1'));
+const rawProjectsAfterFail = JSON.parse(mockProjectsStore.getItem('qavora_projects_v1'));
 assert.strictEqual(rawProjectsAfterFail.length, 1, 'Only original project remains in storage');
 assert.strictEqual(rawProjectsAfterFail[0].id, 'proj_exist_1', 'Original project is preserved');
 console.log('✔ Test 4 passed: Failed new project creation reports failure and preserves storage.');
@@ -320,7 +320,7 @@ const projectWithDefects = {
     { id: 'DEF-002', title: 'Navbar misalignment', severity: 'Low', status: 'Resolved' }
   ]
 };
-safeStorageWrite('testpilot_projects_v1', JSON.stringify([projectWithDefects]));
+safeStorageWrite('qavora_projects_v1', JSON.stringify([projectWithDefects]));
 
 // Simulate quota failure while adding DEF-003
 mockDefectStore.setFailWrites(true, 'quota');
@@ -331,11 +331,11 @@ const updatedProjectCandidate = {
     ...projectWithDefects.defects
   ]
 };
-const defectSaveRes = safeStorageWrite('testpilot_projects_v1', JSON.stringify([updatedProjectCandidate]), 'saving projects');
+const defectSaveRes = safeStorageWrite('qavora_projects_v1', JSON.stringify([updatedProjectCandidate]), 'saving projects');
 assert.strictEqual(defectSaveRes.ok, false, 'Defect save returns failure');
 
 mockDefectStore.setFailWrites(false);
-const loadedProjectsAfterDefectFail = JSON.parse(mockDefectStore.getItem('testpilot_projects_v1'));
+const loadedProjectsAfterDefectFail = JSON.parse(mockDefectStore.getItem('qavora_projects_v1'));
 assert.strictEqual(loadedProjectsAfterDefectFail[0].defects.length, 2, 'Still exactly 2 original defects');
 assert.strictEqual(loadedProjectsAfterDefectFail[0].defects[0].id, 'DEF-001', 'DEF-001 preserved');
 assert.strictEqual(loadedProjectsAfterDefectFail[0].defects[1].id, 'DEF-002', 'DEF-002 preserved');
@@ -392,7 +392,7 @@ setStorageAdapterForTesting(mockMultiStore);
 // Pre-populate with baseline state
 const baselineProjects = [{ id: 'p_base_1', name: 'Base Project', testSuites: [], testPlan: { phases: [] } }];
 const baselineChecklists = [{ id: 'c_base_1', title: 'Base Checklist', phases: [] }];
-safeStorageWrite('testpilot_projects_v1', JSON.stringify(baselineProjects));
+safeStorageWrite('qavora_projects_v1', JSON.stringify(baselineProjects));
 saveAllChecklists(baselineChecklists);
 
 // Simulate multi-step restore: projects succeed, but checklists fail
@@ -418,7 +418,7 @@ const newProjectsToImport = [{ id: 'p_import_1', name: 'Imported Project', testS
 const newChecklistsToImport = [{ id: 'c_import_1', title: 'Imported Checklist', phases: [] }];
 
 // Step 1: Write projects
-const pWrite = safeStorageWrite('testpilot_projects_v1', JSON.stringify(newProjectsToImport));
+const pWrite = safeStorageWrite('qavora_projects_v1', JSON.stringify(newProjectsToImport));
 assert.strictEqual(pWrite.ok, true, 'Projects write succeeded');
 
 // Step 2: Write checklists (fails)
@@ -429,11 +429,11 @@ assert.strictEqual(cWrite.ok, false, 'Checklists write failed due to simulated q
 if (!cWrite.ok) {
   // Restore projects to baseline
   setStorageAdapterForTesting(mockMultiStore);
-  safeStorageWrite('testpilot_projects_v1', JSON.stringify(baselineProjects));
+  safeStorageWrite('qavora_projects_v1', JSON.stringify(baselineProjects));
 }
 
 // Verify baseline is intact
-const restoredProjects = JSON.parse(mockMultiStore.getItem('testpilot_projects_v1'));
+const restoredProjects = JSON.parse(mockMultiStore.getItem('qavora_projects_v1'));
 assert.strictEqual(restoredProjects[0].id, 'p_base_1', 'Projects rolled back to baseline after partial failure');
 const restoredChecklists = loadAllChecklists().checklists;
 assert.strictEqual(restoredChecklists[0].id, 'c_base_1', 'Checklists remained at baseline');
@@ -657,6 +657,50 @@ assert(scriptSource.includes('DOM.deleteConfirmBtn.disabled = true;'), 'ISSUE-01
 
 console.log('✔ Test 16 passed: All regressions for ISSUE-001 through ISSUE-010 verified intact.');
 
+// ---------------------------------------------------------------------------
+// TEST 17: Rebranding Backward-Compatible Storage Migration
+// ---------------------------------------------------------------------------
+console.log('\nRunning Test 17: Rebranding legacy storage migration (testpilot_* -> qavora_*)...');
+
+const mockMigrationStore = createMockStorage();
+setStorageAdapterForTesting(mockMigrationStore);
+
+// Seed with legacy TestPilot keys
+const legacyChecklists = [
+  {
+    id: 'chk_legacy_1',
+    title: 'Migrated Checklist',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    phases: []
+  }
+];
+mockMigrationStore.setItem('testpilot_qa_checklists_v1', JSON.stringify({
+  schemaVersion: 1,
+  savedAt: '2026-01-01T00:00:00.000Z',
+  checklists: legacyChecklists
+}));
+mockMigrationStore.setItem('testpilot_qa_active_runner_v1', JSON.stringify({
+  activeChecklistId: 'chk_legacy_1',
+  lastQaView: 'qa-runner'
+}));
+
+// Load checklists triggers migration
+const migrationResult = loadAllChecklists();
+assert.strictEqual(migrationResult.checklists.length, 1, 'Legacy checklist migrated successfully');
+assert.strictEqual(migrationResult.checklists[0].id, 'chk_legacy_1', 'Migrated checklist ID matches');
+
+// Check that new Qavora key now holds the data
+const qavoraChecklistsRaw = mockMigrationStore.getItem('qavora_qa_checklists_v1');
+assert(qavoraChecklistsRaw, 'New qavora_qa_checklists_v1 key populated');
+
+// Check that active runner state migrated
+const runnerState = getActiveRunnerState();
+assert.strictEqual(runnerState.activeChecklistId, 'chk_legacy_1', 'Active runner state migrated');
+assert(mockMigrationStore.getItem('qavora_qa_active_runner_v1'), 'New qavora_qa_active_runner_v1 key populated');
+
+console.log('✔ Test 17 passed: Backward-compatible migration from testpilot_* to qavora_* verified.');
+
 console.log('\n====================================================');
-console.log('   ALL 16 TESTS IN ISSUE-011 SUITE PASSED (100%)');
+console.log('   ALL 17 TESTS IN ISSUE-011 SUITE PASSED (100%)');
 console.log('====================================================\n');

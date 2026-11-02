@@ -2,8 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
- * TestPilot — Manual QA Testing Manager
- * Prompt 3: Dynamic Test Plans, Phases, Test Suites & Test Cases Controller
+ * Qavora — Manual QA Testing Manager
+ * Dynamic Test Plans, Phases, Test Suites & Test Cases Controller
  */
 
 import { initChecklistGenerator } from './checklistGeneratorUI.js';
@@ -35,10 +35,19 @@ import {
   // Storage Keys & Constants
   // ==========================================================================
   const STORAGE_KEYS = {
+    PROJECTS: 'qavora_projects_v1',
+    ACTIVITIES: 'qavora_activities_v1',
+    THEME: 'qavora_theme_preference'
+  };
+
+  const LEGACY_STORAGE_KEYS = {
     PROJECTS: 'testpilot_projects_v1',
     ACTIVITIES: 'testpilot_activities_v1',
     THEME: 'testpilot_theme_preference'
   };
+
+  const ROLLBACK_KEY = 'qavora_rollback_v1';
+  const LEGACY_ROLLBACK_KEY = 'testpilot_rollback_v1';
 
   const VALID_PROJECT_TYPES = [
     'Website',
@@ -108,7 +117,7 @@ import {
     },
     data: {
       title: 'Data Management & Backups',
-      subtitle: 'Export, import, back up, and restore your TestPilot projects and QA data'
+      subtitle: 'Export, import, back up, and restore your Qavora projects and QA data'
     },
     settings: {
       title: 'Settings',
@@ -232,18 +241,76 @@ import {
   }
 
   // ==========================================================================
-  // Safe Storage Layer with Comprehensive Schema Normalization
+  // Safe Storage Layer with Comprehensive Schema Normalization & Legacy Migration
   // ==========================================================================
+  function migrateLegacyWorkspaceStorage() {
+    try {
+      // 1. Projects
+      const currentProjects = safeStorageRead(STORAGE_KEYS.PROJECTS).raw;
+      const legacyProjects = safeStorageRead(LEGACY_STORAGE_KEYS.PROJECTS).raw;
+      if (!currentProjects && legacyProjects) {
+        try {
+          const parsed = JSON.parse(legacyProjects);
+          if (Array.isArray(parsed)) {
+            const writeRes = safeStorageWrite(STORAGE_KEYS.PROJECTS, legacyProjects, 'migrating projects from legacy storage');
+            if (writeRes && writeRes.ok) {
+              const verified = safeStorageRead(STORAGE_KEYS.PROJECTS).raw;
+              if (verified === legacyProjects) {
+                safeStorageRemove(LEGACY_STORAGE_KEYS.PROJECTS);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 2. Activities
+      const currentActivities = safeStorageRead(STORAGE_KEYS.ACTIVITIES).raw;
+      const legacyActivities = safeStorageRead(LEGACY_STORAGE_KEYS.ACTIVITIES).raw;
+      if (!currentActivities && legacyActivities) {
+        try {
+          const parsed = JSON.parse(legacyActivities);
+          if (Array.isArray(parsed)) {
+            const writeRes = safeStorageWrite(STORAGE_KEYS.ACTIVITIES, legacyActivities, 'migrating activities from legacy storage');
+            if (writeRes && writeRes.ok) {
+              const verified = safeStorageRead(STORAGE_KEYS.ACTIVITIES).raw;
+              if (verified === legacyActivities) {
+                safeStorageRemove(LEGACY_STORAGE_KEYS.ACTIVITIES);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. Theme
+      const currentTheme = safeStorageRead(STORAGE_KEYS.THEME).raw;
+      const legacyTheme = safeStorageRead(LEGACY_STORAGE_KEYS.THEME).raw;
+      if (!currentTheme && legacyTheme) {
+        if (legacyTheme === 'dark' || legacyTheme === 'light') {
+          const writeRes = safeStorageWrite(STORAGE_KEYS.THEME, legacyTheme, 'migrating theme preference');
+          if (writeRes && writeRes.ok) {
+            const verified = safeStorageRead(STORAGE_KEYS.THEME).raw;
+            if (verified === legacyTheme) {
+              safeStorageRemove(LEGACY_STORAGE_KEYS.THEME);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Qavora: Error during legacy workspace storage migration', err);
+    }
+  }
+
   const Storage = {
     getProjects() {
       try {
+        migrateLegacyWorkspaceStorage();
         const { raw } = safeStorageRead(STORAGE_KEYS.PROJECTS);
         if (!raw) return [];
         let parsed;
         try {
           parsed = JSON.parse(raw);
         } catch (jsonErr) {
-          console.error('TestPilot: JSON parse error in localStorage projects', jsonErr);
+          console.error('Qavora: JSON parse error in localStorage projects', jsonErr);
           if (typeof showToast === 'function') {
             showToast('Warning: Unable to parse local project records. Stored data preserved.', 'error');
           }
@@ -434,13 +501,13 @@ import {
           try {
             Storage.saveProjects(normalizedProjects);
           } catch (persistErr) {
-            console.error('TestPilot: Failed to auto-persist generated project IDs', persistErr);
+            console.error('Qavora: Failed to auto-persist generated project IDs', persistErr);
           }
         }
 
         return normalizedProjects;
       } catch (err) {
-        console.error('TestPilot: Failed to read projects from localStorage', err);
+        console.error('Qavora: Failed to read projects from localStorage', err);
         return [];
       }
     },
@@ -459,7 +526,7 @@ import {
         const isQuota = isQuotaExceededError(err);
         const isSecurity = isSecurityError(err);
         const errorMsg = getStorageErrorMessage(err, 'saving projects');
-        console.error('TestPilot: Failed to persist projects to storage', err);
+        console.error('Qavora: Failed to persist projects to storage', err);
         if (typeof showToast === 'function') {
           showToast(errorMsg, 'error');
         }
@@ -475,6 +542,7 @@ import {
 
     getActivities() {
       try {
+        migrateLegacyWorkspaceStorage();
         const { raw } = safeStorageRead(STORAGE_KEYS.ACTIVITIES);
         if (!raw) return [];
         let parsed;
@@ -485,7 +553,7 @@ import {
         }
         return Array.isArray(parsed) ? parsed : [];
       } catch (err) {
-        console.error('TestPilot: Failed to read activities', err);
+        console.error('Qavora: Failed to read activities', err);
         return [];
       }
     },
@@ -495,7 +563,7 @@ import {
         const payload = JSON.stringify(activities);
         return safeStorageWrite(STORAGE_KEYS.ACTIVITIES, payload, 'saving activities');
       } catch (err) {
-        console.error('TestPilot: Failed to persist activities', err);
+        console.error('Qavora: Failed to persist activities', err);
         return {
           ok: false,
           error: getStorageErrorMessage(err, 'saving activities'),
@@ -520,7 +588,7 @@ import {
         this.saveActivities(activities);
         return newEntry;
       } catch (err) {
-        console.warn('TestPilot: Unable to record activity', err);
+        console.warn('Qavora: Unable to record activity', err);
         return null;
       }
     },
@@ -529,7 +597,7 @@ import {
       try {
         safeStorageRemove(STORAGE_KEYS.ACTIVITIES);
       } catch (err) {
-        console.error('TestPilot: Failed to clear activities', err);
+        console.error('Qavora: Failed to clear activities', err);
       }
     },
 
@@ -538,20 +606,20 @@ import {
         const checklistsToSave = Array.isArray(qaChecklists)
           ? qaChecklists
           : loadAllChecklists().checklists;
-        sessionStorage.setItem('testpilot_rollback_v1', JSON.stringify({
+        sessionStorage.setItem(ROLLBACK_KEY, JSON.stringify({
           timestamp: new Date().toISOString(),
           projects: projects,
           activities: activities,
           qaChecklists: checklistsToSave
         }));
       } catch (err) {
-        console.warn('TestPilot: Unable to write rollback to sessionStorage', err);
+        console.warn('Qavora: Unable to write rollback to sessionStorage', err);
       }
     },
 
     getRollbackSnapshot() {
       try {
-        const raw = sessionStorage.getItem('testpilot_rollback_v1');
+        const raw = sessionStorage.getItem(ROLLBACK_KEY) || sessionStorage.getItem(LEGACY_ROLLBACK_KEY);
         return raw ? JSON.parse(raw) : null;
       } catch {
         return null;
@@ -560,12 +628,14 @@ import {
 
     clearRollbackSnapshot() {
       try {
-        sessionStorage.removeItem('testpilot_rollback_v1');
+        sessionStorage.removeItem(ROLLBACK_KEY);
+        sessionStorage.removeItem(LEGACY_ROLLBACK_KEY);
       } catch {}
     },
 
     getTheme() {
       try {
+        migrateLegacyWorkspaceStorage();
         const { raw } = safeStorageRead(STORAGE_KEYS.THEME);
         return raw || 'dark';
       } catch {
@@ -577,7 +647,7 @@ import {
       try {
         return safeStorageWrite(STORAGE_KEYS.THEME, theme, 'saving theme');
       } catch (err) {
-        console.error('TestPilot: Failed to save theme', err);
+        console.error('Qavora: Failed to save theme', err);
       }
     }
   };
@@ -5312,7 +5382,7 @@ import {
       const proj = projects.find(p => p.id === targetId);
       if (!proj) {
         State.pendingConfirm = null;
-        console.warn('TestPilot: Project not found for deletion dialog', targetId);
+        console.warn('Qavora: Project not found for deletion dialog', targetId);
         showToast('Could not find project to delete.', 'error');
         return;
       }
@@ -5432,7 +5502,7 @@ import {
     if (type === 'project') {
       const targetProj = projects.find(p => p.id === targetId);
       if (!targetProj) {
-        console.error('TestPilot: Project deletion failed - project ID not found in storage:', targetId);
+        console.error('Qavora: Project deletion failed - project ID not found in storage:', targetId);
         showToast('Failed to delete project: Project not found.', 'error');
         closeDeleteModal();
         return;
@@ -7302,7 +7372,7 @@ import {
     }
 
     const payload = {
-      application: 'TestPilot',
+      application: 'Qavora',
       backupVersion: 1,
       schemaVersion: 1,
       type: 'project',
@@ -7318,7 +7388,7 @@ import {
 
     const jsonStr = JSON.stringify(payload, null, 2);
     const safeName = sanitizeFilename(project.name);
-    const filename = `TestPilot_${safeName}_${getISODate()}.json`;
+    const filename = `Qavora_${safeName}_${getISODate()}.json`;
 
     downloadFile(jsonStr, filename, 'application/json');
     Storage.addActivity('Exported Project JSON', project.name);
@@ -7345,7 +7415,7 @@ import {
     });
 
     const payload = {
-      application: 'TestPilot',
+      application: 'Qavora',
       backupVersion: 1,
       schemaVersion: 1,
       type: 'full_backup',
@@ -7366,7 +7436,7 @@ import {
     };
 
     const jsonStr = JSON.stringify(payload, null, 2);
-    const filename = `TestPilot_Full_Backup_${getISODate()}.json`;
+    const filename = `Qavora_Full_Backup_${getISODate()}.json`;
 
     downloadFile(jsonStr, filename, 'application/json');
     const summaryLabel = `${projects.length} Projects, ${qaChecklists.length} QA Checklists`;
@@ -7456,7 +7526,7 @@ import {
 
     const csvContent = generateCSV(headers, rows);
     const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
-    const filename = `TestPilot_${scopeName}_TestCases_${getISODate()}.csv`;
+    const filename = `Qavora_${scopeName}_TestCases_${getISODate()}.csv`;
 
     downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
     Storage.addActivity('Exported Test Cases CSV', `${rows.length} Cases (${scopeName})`);
@@ -7518,7 +7588,7 @@ import {
 
     const csvContent = generateCSV(headers, rows);
     const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
-    const filename = `TestPilot_${scopeName}_Executions_${getISODate()}.csv`;
+    const filename = `Qavora_${scopeName}_Executions_${getISODate()}.csv`;
 
     downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
     Storage.addActivity('Exported Executions CSV', `${rows.length} Runs (${scopeName})`);
@@ -7584,7 +7654,7 @@ import {
 
     const csvContent = generateCSV(headers, rows);
     const scopeName = scope === 'ALL' ? 'AllProjects' : sanitizeFilename(targetProjects[0].name);
-    const filename = `TestPilot_${scopeName}_Defects_${getISODate()}.csv`;
+    const filename = `Qavora_${scopeName}_Defects_${getISODate()}.csv`;
 
     downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
     Storage.addActivity('Exported Defects CSV', `${rows.length} Defects (${scopeName})`);
@@ -7649,7 +7719,7 @@ import {
     let contentHtml = `
       <div class="print-header">
         <div>
-          <div class="print-brand">TestPilot</div>
+          <div class="print-brand">Qavora</div>
           <div class="print-subbrand">Manual QA Testing Architecture • Quality Assurance Ledger</div>
         </div>
         <div class="print-meta">
@@ -7903,7 +7973,7 @@ import {
 
     contentHtml += `
       <div class="print-footer">
-        <div>TestPilot Manual QA Testing Architecture • Offline Workspace Engine</div>
+        <div>Qavora Manual QA Testing Architecture • Offline Workspace Engine</div>
         <div>Confidential QA Audit Report • Printed ${dateFormatted}</div>
       </div>
     `;
@@ -7965,11 +8035,11 @@ import {
 
     // Check version compatibility (reject future unsupported formats)
     if (data.backupVersion && Number(data.backupVersion) > 1) {
-      showImportValidationAlert(`Unsupported future backup format (version ${data.backupVersion}). This version of TestPilot supports version 1.`);
+      showImportValidationAlert(`Unsupported future backup format (version ${data.backupVersion}). This version of Qavora supports version 1.`);
       return;
     }
     if (data.schemaVersion && Number(data.schemaVersion) > 1) {
-      showImportValidationAlert(`Unsupported future schema version (version ${data.schemaVersion}). This version of TestPilot supports version 1.`);
+      showImportValidationAlert(`Unsupported future schema version (version ${data.schemaVersion}). This version of Qavora supports version 1.`);
       return;
     }
 
@@ -7996,7 +8066,7 @@ import {
       rawProjects = [data];
       payloadType = 'Individual Project Export';
     } else {
-      showImportValidationAlert('Unrecognized TestPilot data format. Missing required project or QA checklist structure.');
+      showImportValidationAlert('Unrecognized Qavora data format. Missing required project or QA checklist structure.');
       return;
     }
 
@@ -8004,7 +8074,7 @@ import {
     rawProjects = rawProjects.filter(p => p && typeof p === 'object' && (p.name || p.id));
 
     if (rawProjects.length === 0 && (!rawQaChecklists || rawQaChecklists.length === 0)) {
-      showImportValidationAlert('No valid TestPilot project or QA checklist records found in file.');
+      showImportValidationAlert('No valid Qavora project or QA checklist records found in file.');
       return;
     }
 

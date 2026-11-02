@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — Transfer Between Devices UI Controller
+ * Qavora — Transfer Between Devices UI Controller
  * Uses 100% safe DOM construction (createElement / textContent / value / checked) —
  * zero innerHTML usage.
  */
@@ -337,7 +337,7 @@ export function initQAChecklistTransferUI({
       return;
     }
     const dateStamp = new Date().toISOString().split('T')[0];
-    downloadTextAsFile(code, `TestPilot_Transfer_Code_${dateStamp}.txt`);
+    downloadTextAsFile(code, `Qavora_Transfer_Code_${dateStamp}.txt`);
     showToastMessage('Saved transfer code file for easy sharing.', 'success');
   }
 

@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — Generic Manual QA Plan Structural Parser
+ * Qavora — Generic Manual QA Plan Structural Parser
  * Pure ES6 module with zero external or AI dependencies.
  * Analyzes pasted plain-text or Markdown QA plans into Phases, Descriptions,
  * Categories, Individual Tests, Supporting Notes, and Unclassified items.

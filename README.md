@@ -1,8 +1,8 @@
-# TestPilot — Manual QA Testing Manager
+# Qavora — Manual QA Testing Manager
 
-TestPilot is a browser-based manual QA testing management tool that allows users to paste structured QA testing plans, automatically organize phases and test cases, review and edit generated checklists, and manually track testing progress through interactive checkboxes.
+Qavora is a modern, project-agnostic browser-based manual QA testing management platform. It empowers software testers, QA engineers, and development teams to transform unstructured plain-text or Markdown testing plans into structured, interactive test suites, execute manual verification runs, log defect tickets, and monitor release readiness—completely client-side.
 
-Progress is automatically saved in browser `localStorage` so users can return and continue testing later. TestPilot is project-agnostic and works with manual QA testing plans across different software applications and teams without requiring a backend server, database, or external API.
+Operating entirely within the web browser, Qavora requires no backend server, external database, cloud service, or artificial intelligence API. Testing data is persisted directly within browser local storage, providing complete data privacy, zero telemetry, and instant offline accessibility.
 
 - **Live Demo:** [https://hannankhan203.github.io/Test-Pilot/](https://hannankhan203.github.io/Test-Pilot/)
 - **Repository:** [https://github.com/Hannankhan203/Test-Pilot](https://github.com/Hannankhan203/Test-Pilot)
@@ -11,90 +11,109 @@ Progress is automatically saved in browser `localStorage` so users can return an
 
 ## Key Features
 
-### Generic QA Checklist Generator
-- Paste structured plain-text or Markdown QA testing plans, or load a built-in sample plan.
-- Automatically detect document titles, plan-level notes, phases, and phase descriptions.
-- Extract testing categories/subheadings and individual test cases across common plan formats, including explicit `Phase` headings, numbered sections and decimal items, Markdown headings (`#`, `##`, `###`), bulleted or checkbox lists, and final regression or release checklists.
-- Preserve test IDs (such as `AUTH-001`, `[TC-104]`, or `1.1`) and priority labels (`Critical`, `High`, `Medium`, `Low`, `P0`–`P4`) where present.
-- Switch between **Edit & Review** mode and **Clean Preview** mode before starting test execution.
-- Edit phase labels, phase names, descriptions, supporting notes, categories, test IDs, priorities, and test descriptions inline.
-- Add, remove, and reorder tests within sections, or add and remove phases and categories.
-- Review ambiguous or unstructured lines in an **Unclassified Content** panel and convert them into phases, categories, tests, or notes.
+### 1. Generic QA Checklist Generator
+- **Multi-Format Parsing:** Paste structured plain-text or Markdown QA testing plans, or load built-in sample plans.
+- **Structural Plan Detection:** Automatically detects document titles, plan-level notes, phases, phase descriptions, testing categories, subheadings, and individual test items.
+- **Heuristic Extraction:** Extracts tests across diverse formatting styles, including explicit `Phase` prefixes, decimal/numeric section markers (`1.1`, `2.5`), Markdown headings (`#`, `##`, `###`), bullet points, and bracketed checkboxes (`- [ ]`).
+- **Metadata Preservation:** Captures test identifiers (such as `AUTH-001`, `[TC-104]`, `1.1`) and severity/priority indicators (`Critical`, `High`, `Medium`, `Low`, `P0`–`P4`).
+- **Dual Display Modes:** Seamlessly toggle between **Edit & Review** mode (interactive inline editing) and **Clean Preview** mode (distraction-free formatted document presentation).
+- **Inline Customization:** Add, remove, rename, and reorder phases, categories, test cases, descriptions, and supporting notes prior to execution.
+- **Unclassified Content Handling:** Captures ambiguous or unstructured lines in an interactive review drawer, allowing testers to assign them as phases, categories, notes, or test items without discarding information.
 
-### Interactive Manual QA Test Runner
-- Convert any reviewed plan into an interactive checklist with all test items initialized as `Not Started`.
-- Mark individual tests as `Not Started` or `Completed` using interactive checkboxes.
-- Track real-time phase-level completion counts, percentages, and progress bars.
-- Track overall checklist progress (total phases, total tests, completed tests, remaining tests, and overall completion percentage).
-- Expand and collapse individual phase sections, or expand/collapse all phases at once.
-- Toggle **Edit Checklist** mode during testing to update titles, notes, phases, categories, or test items while preserving existing completion states.
+### 2. Interactive Manual QA Test Runner
+- **Live Test Execution:** Converts reviewed checklists into an active execution environment where test cases initialize to `Not Started`.
+- **Status Toggling:** Update individual test outcomes between `Not Started` and `Completed` using accessible, interactive checkboxes.
+- **Real-Time Progress Tracking:** Computes instant phase-level and overall progress statistics, including completed counts, remaining tests, and percentage progress bars.
+- **Accordion Controls:** Expand and collapse individual testing phases or use global expand-all / collapse-all controls for efficient navigation.
+- **Edit Checklist Mode:** Update checklist structure, test wording, and phase titles on the fly without resetting active test execution progress.
 
-### Checklist Management
-- Create and store multiple independent QA checklists in **My QA Checklists**.
-- Search saved checklists by title and switch between checklists from the runner selector.
-- Open and resume saved checklists from the sidebar, checklist cards, or quick-resume banner.
-- Rename checklists inline and delete checklists with modal confirmation.
-- View creation and last-saved timestamps alongside status badges (`Not Started`, `In Progress`, `Completed`).
+### 3. Checklist Management
+- **Multi-Checklist Workspace:** Create, organize, and maintain multiple independent manual QA checklists inside **My QA Checklists**.
+- **Search & Filter:** Filter saved checklists instantly by title and switch active execution targets from a centralized dropdown switcher.
+- **Lifecycle Operations:** Rename checklists inline and delete finished or deprecated checklists with modal confirmation.
+- **Status Badges & Timestamps:** Track checklist lifecycle states (`Not Started`, `In Progress`, `Completed`) alongside creation and last-saved timestamps.
 
-### Automatic Data Persistence
-- Automatically save checklist creation, inline edits, checkbox state changes, phase expand/collapse states, and active runner session state in browser `localStorage`.
-- Restore the active checklist and view after refreshing or reopening the browser, and synchronize updates across open tabs in the same browser.
-- Maintain isolated state across multiple saved checklists.
-- Recover safely from malformed `localStorage` data, repair duplicate record IDs on load, and surface clear warnings if browser storage quota is exceeded.
+### 4. Automatic Data Persistence
+- **Client-Authoritative Storage:** Automatically persists checklist configurations, execution progress, UI expansion states, and active runner sessions in browser `localStorage`.
+- **Seamless Rebranding Migration:** Features automatic, one-time backward-compatible migration from legacy `testpilot_*` keys to `qavora_*` keys, ensuring existing user records are never lost.
+- **Cross-Tab Synchronization:** Synchronizes state updates across open browser tabs on the same origin.
+- **Safe Recovery & Quota Defenses:** Isolates malformed storage data safely without destructive resets, repairs duplicate record IDs upon loading, and displays user-friendly warnings if browser storage quotas are reached.
 
-### Transfer Between Devices
-- Generate a portable transfer code (`TPX1.*`) on one device from **Data Management → Transfer Between Devices** without manually exporting or importing JSON files.
-- Copy the generated code on the sending device and paste it into TestPilot on the receiving device to import saved QA checklists.
-- Preserves checklist structure, phases, descriptions, categories, notes, priorities, checklist IDs, and completed test progress.
-- Validates incoming transfer codes locally in the browser using Web Crypto `SHA-256` integrity checks and native stream compression before any data is written.
-- Supports **Merge with Existing Data** (default, preventing accidental overwrites) and **Replace Existing Workspace Data** (with automatic pre-replace rollback snapshot).
-- Requires no Firebase, backend server, user account, or paid service—performing a manual point-in-time transfer rather than automatic real-time synchronization.
+### 5. Transfer Between Devices
+- **Zero-File Portability:** Generate portable `TPX1.*` transfer codes in **Data Management → Transfer Between Devices** to move checklists across devices without downloading or managing files.
+- **Cryptographic Verification:** Validates transfer payloads using native Web Crypto `SHA-256` integrity checksums before applying any changes.
+- **Native Stream Compression:** Compresses payloads using browser-native `CompressionStream` and `DecompressionStream` (`deflate-raw`) with uncompressed fallbacks.
+- **Flexible Import Strategies:** Supports both **Merge with Existing Data** (default non-destructive import) and **Replace Existing Workspace Data** (with automatic pre-replace rollback snapshots).
+- **Backward-Compatible Protocol:** Imports legacy `TPX1` transfer codes created in earlier versions while generating `Qavora`-tagged payloads.
 
-### Project Workspaces, Backup, and Restore
-- **Additional Project QA Views:** Includes optional client-side workspaces (`Dashboard`, `My Projects`, `Test Plans`, `Test Execution`, `Defects`, and `Reports`) for step-based test suites, defect logging, and printable reports.
-- **Full Application Backup & Import:** Export a single `.json` backup containing both QA checklists (`qaChecklists`) and project workspaces (`projects`, `activities`) from **Data Management**, and re-import backups using **Merge** or **Replace** modes after schema validation.
-- **Rollback & Workspace Reset:** Automatically saves a pre-restore/pre-reset snapshot in `sessionStorage` for one-click rollback within the current session, and provides a confirmation-gated workspace reset.
+### 6. Project Workspaces
+- **Structured QA Workspaces:** Full project workspace support including **Dashboard**, **My Projects**, **Test Plans**, **Test Execution**, **Defects**, and **Reports**.
+- **Test Suites & Cases:** Organize step-by-step test suites with preconditions, step instructions, expected outcomes, and execution status tracking (`Pass`, `Fail`, `Blocked`, `Skipped`).
+- **Defect Tracking:** Log, update, and manage defect records with severity levels, reproduction steps, external issue links, and test-case associations.
+- **Printable Reports:** Generate clean, print-optimized executive summaries, test-case inventories, execution audit trails, and defect registries.
 
-### Interface
-- Responsive layout supporting mobile, tablet, and desktop viewports.
-- Dark and light themes with persisted preference.
-- Keyboard-accessible controls, visible focus indicators, `aria-expanded` phase toggles, and modal focus trapping/restoration.
+### 7. Backup, Import, Restore, and Rollback
+- **Universal JSON Backups:** Export individual projects or complete application archives containing all projects, test suites, test cases, execution histories, defects, QA checklists, and activity logs.
+- **Pre-Restore Rollback Snapshots:** Automatically saves temporary memory snapshots in `sessionStorage` before any replace or overwrite operation, enabling instant one-click rollback.
+- **CSV Data Export:** Export test cases, execution runs, and defect registries to industry-standard CSV spreadsheets.
+- **Gated Workspace Reset:** Safeguarded workspace reset protected by confirmation dialogs and mandatory backup recommendations.
+
+### 8. Responsive Interface and Accessibility
+- **Modern Design System:** Dark and light themes inspired by modern software engineering aesthetics with persisted user preference.
+- **Responsive Layout:** Adaptive sidebar and workspace layouts tailored for mobile, tablet, and desktop screens.
+- **Accessibility Standards:** Full keyboard navigation, visible focus indicators, `aria-expanded` attributes on interactive disclosures, accessible `aria-label` identifiers on icon-only controls, and focus-trapped confirmation dialogs.
 
 ---
 
 ## Technology Stack
 
-- **HTML5** — Semantic single-page layout and accessible modal/view containers (`index.html`).
-- **CSS3 & Tailwind CSS** — Custom CSS design tokens, Flexbox/Grid layouts, dark/light themes, print styles (`style.css`), and `@tailwindcss/vite` build integration.
-- **Vanilla JavaScript (ES6+)** — Modular client-side architecture (`qaParser.js`, `checklistGeneratorUI.js`, `qaChecklistStore.js`, `qaRunnerUI.js`, `qaChecklistTransfer.js`, `qaChecklistTransferUI.js`, `script.js`) using safe DOM APIs, Web Crypto (`SHA-256`), and `CompressionStream` / `DecompressionStream`.
-- **Browser Web Storage** — `localStorage` for persistent checklists, projects, and theme preferences; `sessionStorage` for temporary rollback snapshots.
-- **Vite** — Local development server and static production bundler (`vite.config.ts`).
-- **TypeScript (`tsc`)** — Static configuration check via `npm run lint` (`tsconfig.json`).
+Qavora is engineered with pure browser-standard technologies:
 
-TestPilot runs entirely in the browser with Vanilla JavaScript. It does not use React at runtime, and it does not rely on a backend server, cloud database, AI API, or automated browser-testing engine.
+- **HTML5:** Semantic document structure, accessible dialogs, and native form elements (`index.html`).
+- **CSS3 & Tailwind CSS:** Clean CSS architecture, CSS custom properties (tokens), responsive Flexbox/Grid layouts, dark/light themes, print media rules (`style.css`), and `@tailwindcss/vite` integration.
+- **Vanilla JavaScript (ES6+):** Modular, decoupled native JavaScript modules (`qaParser.js`, `checklistGeneratorUI.js`, `qaChecklistStore.js`, `qaRunnerUI.js`, `qaChecklistTransfer.js`, `qaChecklistTransferUI.js`, `script.js`). All dynamic DOM creation uses safe DOM methods (`createElement`, `textContent`, `value`) to prevent injection vulnerabilities.
+- **Browser Web Storage:**
+  - `localStorage`: Used for persistent QA checklists (`qavora_qa_checklists_v1`), active runner state (`qavora_qa_active_runner_v1`), project workspaces (`qavora_projects_v1`), activity logs (`qavora_activities_v1`), and theme preferences (`qavora_theme_preference`).
+  - `sessionStorage`: Used for session-scoped rollback snapshots (`qavora_rollback_v1`).
+- **Web Crypto API:** Native browser `crypto.subtle.digest('SHA-256')` for tamper-proof data verification in device transfer codes.
+- **Stream Compression API:** Native `CompressionStream` and `DecompressionStream` for lightweight, URL-safe transfer encoding.
+- **Vite:** Next-generation development server and production bundler (`vite.config.ts`).
+- **TypeScript:** Type verification and compile-time configuration validation (`tsconfig.json`).
+
+> **Architectural Note:** Qavora runs entirely on client-side Vanilla JavaScript. It does not use React at runtime, does not require a Node.js backend server, and does not depend on cloud databases or external AI/LLM APIs.
 
 ---
 
 ## Project Structure
 
 ```text
-Test-Pilot/
+Qavora/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml          # GitHub Actions workflow for GitHub Pages deployment
-├── public/                     # Favicons, web app icons, and site.webmanifest
-├── index.html                  # Application shell, navigation, views, and modals
-├── style.css                   # Theme tokens, component styles, and responsive rules
-├── script.js                   # App bootstrap, view router, project workspaces, and backups
-├── qaParser.js                 # Generic plain-text/Markdown QA plan parser
-├── checklistGeneratorUI.js     # Create QA Checklist view, preview, and inline editor UI
-├── qaChecklistStore.js         # Checklist localStorage persistence, validation, and progress math
-├── qaRunnerUI.js               # Manual QA Test Runner and My QA Checklists UI controller
-├── qaChecklistTransfer.js      # Portable transfer code encoding, compression, and SHA-256 validation
-├── qaChecklistTransferUI.js    # Transfer Between Devices UI controller (Send, Receive, Merge/Replace)
-├── vite.config.ts              # Vite dev server and base-path build configuration
-├── tsconfig.json               # TypeScript static verification config
-└── package.json                # Scripts and build tooling dependencies
+│       └── deploy.yml          # GitHub Actions workflow for automated GitHub Pages deployment
+├── public/
+│   ├── apple-touch-icon.png    # iOS home-screen icon
+│   ├── favicon-16x16.png       # 16px browser tab icon
+│   ├── favicon-32x32.png       # 32px browser tab icon
+│   ├── favicon.ico             # Legacy browser icon fallback
+│   ├── favicon.svg             # Modern vector favicon
+│   ├── icon-192.png            # Web App Manifest 192px maskable icon
+│   ├── icon-512.png            # Web App Manifest 512px maskable icon
+│   └── site.webmanifest        # PWA application metadata and standalone manifest
+├── index.html                  # Single-page application shell, navigation, views, and modal dialogs
+├── style.css                   # Design tokens, component rules, theme styles, and print stylesheets
+├── script.js                   # Main application router, project workspaces, CSV/JSON exports, and backup manager
+├── checklistGeneratorUI.js     # Create QA Checklist view controller and interactive inline editor
+├── qaParser.js                 # Plain-text and Markdown QA plan structural analysis engine
+├── qaRunnerUI.js               # Manual QA Test Runner and My QA Checklists workspace controller
+├── qaChecklistStore.js         # Checklist persistence, backward-compatible migration, progress math, and quota guards
+├── qaChecklistTransfer.js      # Device-to-device transfer engine with compression and SHA-256 integrity checks
+├── qaChecklistTransferUI.js    # Transfer Between Devices UI controller (Send, Receive, Merge, Replace)
+├── test-issue-010.js           # Automated test suite for modal confirmation and focus management
+├── test-issue-011.js           # Automated test suite for storage quota handling and backward-compatible migration
+├── vite.config.ts              # Vite configuration with base-path and dev-server parameters
+├── tsconfig.json               # TypeScript configuration for static verification
+└── package.json                # Project manifest, npm run scripts, and devDependencies
 ```
 
 ---
@@ -103,79 +122,114 @@ Test-Pilot/
 
 ### Prerequisites
 
-- **Node.js** (v20 or later recommended)
-- **npm**
-- **Git** (optional, for cloning the repository)
+- **Node.js:** v20.0.0 or higher recommended (compatible with Node.js 22 LTS).
+- **npm:** v10.0.0 or higher.
+- **Modern Browser:** Google Chrome, Mozilla Firefox, Apple Safari, or Microsoft Edge.
 
-### Installation and Running Locally
+### Installation
 
-```bash
-git clone https://github.com/Hannankhan203/Test-Pilot.git
-cd Test-Pilot
-npm install
-npm run dev
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Hannankhan203/Test-Pilot.git
+   cd Test-Pilot
+   ```
 
-> **Note:** If your npm version reports peer-dependency conflicts during installation, run `npm install --legacy-peer-deps` (as used in the CI workflow).
+2. Install dependencies:
+   ```bash
+   npm install --legacy-peer-deps
+   ```
 
-Once started, open the local development URL in your browser:
+3. Launch the development server:
+   ```bash
+   npm run dev
+   ```
 
-```text
-http://localhost:3000
-```
+4. Open the development server in your browser:
+   ```text
+   http://localhost:3000
+   ```
 
-### Production Build and Scripts
+---
 
-Build the static production bundle:
+## Available Scripts
+
+The following npm scripts are defined in `package.json`:
+
+| Command | Description |
+| :--- | :--- |
+| `npm run dev` | Launches the local Vite development server on port `3000` (`0.0.0.0`). |
+| `npm run build` | Compiles the production distribution bundle into the `dist/` directory. |
+| `npm run preview` | Serves the built production bundle locally for previewing. |
+| `npm run lint` | Runs TypeScript configuration checks (`tsc --noEmit`). |
+| `npm run clean` | Removes the compiled `dist/` production folder. |
+
+---
+
+## Production Build
+
+To compile a standalone, optimized production bundle:
 
 ```bash
 npm run build
 ```
 
-Vite outputs the compiled HTML, CSS, and JavaScript assets to the `dist/` directory.
+Vite processes the application HTML, CSS, and modular JavaScript, outputting the bundled assets into the `dist/` directory. You can test the compiled production build locally with:
 
-Additional scripts defined in `package.json`:
-
-| Command | Description |
-| :--- | :--- |
-| `npm run dev` | Starts the Vite development server on port `3000` (`0.0.0.0`). |
-| `npm run build` | Builds the static production bundle into `dist/`. |
-| `npm run preview` | Previews the production build locally via Vite. |
-| `npm run lint` | Runs `tsc --noEmit` to validate TypeScript configuration. |
-| `npm run clean` | Removes the `dist/` build output directory. |
+```bash
+npm run preview
+```
 
 ---
 
 ## GitHub Pages Deployment
 
-TestPilot is configured for automated deployment to GitHub Pages via `.github/workflows/deploy.yml`:
+Qavora includes an automated CI/CD deployment pipeline configured in `.github/workflows/deploy.yml`:
 
-- **Live Deployment:** [https://hannankhan203.github.io/Test-Pilot/](https://hannankhan203.github.io/Test-Pilot/)
-- **Trigger:** Runs automatically on every push to the `main` branch, or manually via `workflow_dispatch`.
-- **Base Path Handling:** During GitHub Actions builds (`GITHUB_ACTIONS=true`), `vite.config.ts` sets Vite's `base` path to `/Test-Pilot/` (overridable via `VITE_BASE_PATH`).
-- **Repository Configuration:** In GitHub repository **Settings → Pages**, ensure **Build and deployment → Source** is set to **GitHub Actions** so the workflow can publish the `./dist` artifact.
+- **Deployment URL:** [https://hannankhan203.github.io/Test-Pilot/](https://hannankhan203.github.io/Test-Pilot/)
+- **Trigger:** The workflow automatically runs on every push to the `main` or `master` branch, and can also be triggered manually via `workflow_dispatch`.
+- **Base Path Resolution:** During continuous integration (`GITHUB_ACTIONS=true`), `vite.config.ts` sets Vite's base path to `/Test-Pilot/` to match GitHub Pages hosting requirements. For custom domain or root deployments, override this by setting `VITE_BASE_PATH=/`.
+- **Repository Setup:** Under GitHub repository **Settings → Pages**, ensure **Build and deployment → Source** is set to **GitHub Actions**.
 
 ---
 
 ## Data Storage and Privacy
 
-- **Local Browser Storage:** QA checklists (`testpilot_qa_checklists_v1`), active runner state (`testpilot_qa_active_runner_v1`), project workspaces (`testpilot_projects_v1`), activity logs (`testpilot_activities_v1`), and theme settings (`testpilot_theme_preference`) are stored locally in the browser's `localStorage`.
-- **No Cloud Synchronization:** Checklist and testing data stays inside the local browser and is not synced automatically to any external server, Firebase instance, or cloud account.
-- **Browser-Specific Scope:** Saved checklists are tied to the specific browser profile and device where they were created unless manually moved via **Transfer Between Devices** or a JSON backup.
-- **Data Retention:** Clearing browser site data or storage will remove saved checklists and projects. Generate a transfer code or export a JSON backup from **Data Management** whenever you need to preserve or move your data.
+- **100% Client-Side Persistence:** All testing data—including test cases, checklist completion states, defect tickets, execution logs, and user preferences—is stored locally in browser `localStorage`.
+- **Safe Backward-Compatible Migration:** On startup, Qavora automatically detects any existing data stored under previous version keys (`testpilot_*`) and migrates it cleanly to the new `qavora_*` keys without data loss. Old keys are only purged after successful verification.
+- **Session-Scoped Rollback:** Pre-restore and pre-reset snapshots are captured in `sessionStorage` (`qavora_rollback_v1`), allowing testers to reverse workspace imports within the same browsing session.
+- **Zero Cloud Leakage:** No test names, proprietary test steps, or defect logs are transmitted over the network or stored in third-party cloud servers.
+- **Browser-Specific Sandbox:** Data is isolated to the specific browser profile and device origin. To move data between devices, use **Transfer Between Devices** or export a full JSON backup from **Data Management**.
+- **Data Retention Notice:** Clearing browser cache, private browsing data, or site cookies will erase local storage. Regular JSON backups from **Data Management** are recommended.
 
 ---
 
 ## Limitations
 
-- **Manual Transfer Only (No Real-Time Sync):** Data does not sync automatically across devices or browsers. **Transfer Between Devices** performs a manual point-in-time transfer via copy/paste codes, and local storage remains subject to standard browser `localStorage` quotas (typically ~5 MB per origin).
-- **Heuristic Plan Parsing:** Plain-text and Markdown plans vary widely; lines without recognizable headings, numbering, bullets, or metadata labels are surfaced in **Unclassified Content** for manual review rather than inferred automatically.
-- **Manual Execution Only:** The QA Test Runner tracks manual completion (`Not Started` / `Completed`) and does not execute automated tests.
+- **Manual Execution Only:** Qavora is specifically engineered for human manual QA testing. It does not execute automated browser automation frameworks (such as Selenium, Cypress, or Playwright).
+- **Heuristic Plan Parsing:** Plain-text and Markdown QA plans vary significantly across software organizations. Lines that cannot be confidently recognized as phases, categories, or tests are directed to the **Unclassified Content** drawer for human verification.
+- **Browser Storage Quota:** Browser local storage is subject to per-origin browser ceilings (typically between 5 MB and 10 MB). For extensive QA archives with thousands of test cases, testers should utilize JSON backups.
+- **Point-in-Time Transfers:** Device-to-device transfers operate on a manual import/export model using transfer codes or JSON archives rather than continuous, real-time background cloud synchronization.
 
 ---
 
 ## Contributing
 
-1. Fork the repository and create a feature or bugfix branch.
-2. Verify your changes locally with `npm run lint` and `npm run build`.
-3. Open a pull request describing the change clearly.
+Contributions, bug reports, and suggestions are welcome:
+
+1. Fork the repository on GitHub.
+2. Create a focused feature branch (`git checkout -b feature/improvement-name`).
+3. Ensure all tests and static analysis pass:
+   ```bash
+   node test-issue-010.js
+   node test-issue-011.js
+   npm run lint
+   npm run build
+   ```
+4. Commit your changes with clear, descriptive commit messages.
+5. Push your branch and open a pull request explaining your enhancement.
+
+---
+
+## License
+
+This project is open-source software licensed under the **Apache License, Version 2.0**. Refer to the SPDX license identifiers declared across source files for license details.

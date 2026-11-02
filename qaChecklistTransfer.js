@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — Portable Device-to-Device QA Checklist Transfer Engine
+ * Qavora — Portable Device-to-Device QA Checklist Transfer Engine
  *
  * Pure browser-native implementation using:
  *   - CompressionStream / DecompressionStream ('deflate-raw', with uncompressed fallback)
@@ -285,7 +285,7 @@ export async function generateChecklistTransferCode(options = {}) {
   const transferId = generateStableId('xfer');
 
   const payloadObject = {
-    app: 'TestPilot',
+    app: 'Qavora',
     kind: 'qa_checklist_transfer',
     transferVersion: TRANSFER_FORMAT_VERSION,
     schemaVersion: SCHEMA_VERSION,
@@ -355,7 +355,7 @@ export async function validateChecklistTransferCode(rawCodeInput) {
     if (prefixVer > TRANSFER_FORMAT_VERSION) {
       return {
         ok: false,
-        error: `Unsupported transfer code version (${segments[0].toUpperCase()}). This version of TestPilot supports ${TRANSFER_PREFIX}.`
+        error: `Unsupported transfer code version (${segments[0].toUpperCase()}). This version of Qavora supports ${TRANSFER_PREFIX}.`
       };
     }
   }
@@ -363,7 +363,7 @@ export async function validateChecklistTransferCode(rawCodeInput) {
   if (segments[0] !== TRANSFER_PREFIX) {
     return {
       ok: false,
-      error: `Invalid transfer code format. Expected a TestPilot code starting with "${TRANSFER_PREFIX}."`
+      error: `Invalid transfer code format. Expected a Qavora code starting with "${TRANSFER_PREFIX}."`
     };
   }
 
@@ -468,12 +468,12 @@ export async function validateChecklistTransferCode(rawCodeInput) {
   }
 
   if (
-    parsedPayload.app !== 'TestPilot' ||
+    (parsedPayload.app !== 'Qavora' && parsedPayload.app !== 'TestPilot') ||
     parsedPayload.kind !== 'qa_checklist_transfer'
   ) {
     return {
       ok: false,
-      error: 'Unrecognized transfer payload. Only TestPilot QA checklist transfer codes are supported.'
+      error: 'Unrecognized transfer payload. Only Qavora QA checklist transfer codes are supported.'
     };
   }
 

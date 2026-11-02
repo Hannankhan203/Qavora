@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * TestPilot — Manual QA Test Runner & Saved Checklists UI Controller (Prompt 2)
+ * Qavora — Manual QA Test Runner & Saved Checklists UI Controller (Prompt 2)
  * 100% safe DOM construction (createElement / textContent / value / checked) —
  * zero innerHTML usage.
  */
@@ -526,7 +526,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       els.deleteModalTitleSpan.textContent = checklist.title;
     }
     if (els.deleteModalScopeNote) {
-      els.deleteModalScopeNote.textContent = 'Other saved checklists and TestPilot projects will not be affected.';
+      els.deleteModalScopeNote.textContent = 'Other saved checklists and Qavora projects will not be affected.';
     }
     const confirmSpan = els.deleteModalConfirmText || document.querySelector('#qa-chk-delete-confirm span');
     if (confirmSpan) {
