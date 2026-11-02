@@ -625,7 +625,7 @@ assert(xferUISource.includes('copyTextSafe'), 'ISSUE-003: Robust clipboard and f
 
 // ISSUE-004: GitHub Pages deployment configuration in vite.config.ts
 const viteConfig = fs.readFileSync('./vite.config.ts', 'utf-8');
-assert(viteConfig.includes("process.env.GITHUB_ACTIONS === 'true' ? '/Test-Pilot/' : '/'"), 'ISSUE-004: GitHub Pages base path intact');
+assert(viteConfig.includes("process.env.GITHUB_ACTIONS === 'true' ? '/Qavora/' :"), 'ISSUE-004: GitHub Pages base path intact');
 
 // ISSUE-005: Manifest / PWA path handling
 const htmlSource = fs.readFileSync('./index.html', 'utf-8');
