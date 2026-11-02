@@ -254,6 +254,52 @@ const INLINE_TEST_ID_RE = /^([A-Za-z][A-Za-z0-9_]{1,14}[-_]\d{1,6})\s*(?:[:—�
 // Numbered line: "1. Test valid credentials." or "0. Environment Setup" or "2) Verify logout"
 const NUMBERED_LINE_RE = /^(?:\((\d+)\)|(\d+)[.)])\s+(.+)$/;
 
+// Lettered bullet list markers:
+// "a) First test case", "a. Second test case", "(a) Third scenario",
+// "A) First requirement", "A. Second requirement", "(A) Third scenario",
+// with optional markdown bold/italic on the marker: "**a)**", "*a)*", "*A.*", etc.
+export const LETTERED_BULLET_RE = /^(?:\*{1,2}|_{1,2})?(?:\(([a-zA-Z])\)|([a-zA-Z])([.)]))(?:\*{1,2}|_{1,2})?(?:\s*[:—–\-]\s*|\s+)(.+)$/;
+
+export function isLetteredBulletLine(trimmed) {
+  if (!trimmed || typeof trimmed !== 'string') return false;
+  const m = trimmed.match(LETTERED_BULLET_RE);
+  if (!m) return false;
+
+  const letter = (m[1] || m[2] || '').toLowerCase();
+  const delim = m[1] ? '()' : (m[3] || '');
+  const body = (m[4] || '').trim();
+
+  if (!body) return false;
+
+  // Distinguish valid letter markers from false positives:
+  // 1. Parenthesized markers "(a)" or ")" like "a)" / "A)" are unequivocally list markers.
+  if (delim === '()' || delim === ')') {
+    return true;
+  }
+
+  // 2. Delimiter is period ".": e.g. "a. First test", "A. First requirement"
+  // Exclude circa dates: "c. 1920"
+  if (letter === 'c' && /^\d{4}\b/.test(body)) {
+    return false;
+  }
+  // Exclude page numbers: "p. 42", "p. 100"
+  if (letter === 'p' && /^\d+\b/.test(body)) {
+    return false;
+  }
+  // Exclude citation abbreviations like "v. Smith" (versus) if short proper noun
+  if (letter === 'v' && /^[A-Z][a-z]+\b/.test(body) && body.split(/\s+/).length <= 3) {
+    return false;
+  }
+
+  // Exclude single-letter initials in narrative prose:
+  // e.g. "A. Johnson conducted preliminary testing."
+  if (/^[A-Z][a-z]+\s+(?:was|were|reported|stated|said|wrote|noted|conducted|performed|attended|agreed|suggested)\b/i.test(body)) {
+    return false;
+  }
+
+  return true;
+}
+
 // Decimal sub-section category: "1.1 Login Flow", "2.3 Edge Cases"
 const DECIMAL_SUBHEADING_RE = /^(\d+\.\d+(?:\.\d+)?)\s*(?:[:—–\-.)]\s*)?(.+)$/;
 
@@ -295,6 +341,17 @@ function extractTestIdAndPriority(rawTestBody) {
   let working = rawTestBody.trim();
   let testId = '';
   let priority = '';
+  let letterPrefix = '';
+
+  // Check if line begins with a lettered bullet marker: preserve marker while allowing ID/priority extraction
+  const letterMatch = working.match(LETTERED_BULLET_RE);
+  if (letterMatch && isLetteredBulletLine(working)) {
+    const rawMatch = letterMatch[0];
+    const markerBody = letterMatch[4];
+    const markerLength = rawMatch.length - markerBody.length;
+    letterPrefix = rawMatch.slice(0, markerLength).trim().replace(/[:—–\-]$/, '').trim();
+    working = markerBody.trim();
+  }
 
   // 1. Check leading priority before Test ID e.g. "[Critical] AUTH-001: Verify login"
   const leadPrio1 = working.match(LEADING_PRIORITY_RE);
@@ -343,10 +400,13 @@ function extractTestIdAndPriority(rawTestBody) {
     }
   }
 
+  const finalBody = working || rawTestBody.trim();
+  const preservedText = letterPrefix ? `${letterPrefix} ${finalBody}` : finalBody;
+
   return {
     testId,
     priority,
-    text: working || rawTestBody.trim()
+    text: preservedText
   };
 }
 
@@ -403,6 +463,7 @@ function isObviousChildTestLine(trimmed) {
   if (BRACKETED_TEST_ID_RE.test(trimmed)) return true;
   if (INLINE_TEST_ID_WITH_PRIO_RE.test(trimmed)) return true;
   if (INLINE_TEST_ID_RE.test(trimmed)) return true;
+  if (isLetteredBulletLine(trimmed)) return true;
   return false;
 }
 
@@ -806,7 +867,9 @@ export function parseQAPlanText(rawInput) {
     pendingDescriptionHeaderMode = false;
 
     const extracted = extractTestIdAndPriority(rawBody);
-    const effectiveTestId = extracted.testId || fallbackTestId;
+    const effectiveTestId = (extracted.testId !== undefined && extracted.testId !== null && String(extracted.testId).trim() !== '')
+      ? String(extracted.testId)
+      : fallbackTestId;
     const cleanText = extracted.text.trim();
     if (!cleanText) return;
 
@@ -1054,6 +1117,38 @@ export function parseQAPlanText(rawInput) {
     const numTestMatch = meta.trimmed.match(NUMBERED_LINE_RE);
     if (numTestMatch) {
       addTestToCurrentContext(numTestMatch[3], meta);
+      continue;
+    }
+
+    // 11b. Lettered Test Items ("a) First test case", "A. First requirement", "(a) First scenario")
+    if (isLetteredBulletLine(meta.trimmed)) {
+      const strippedFormatting = stripMarkdownFormatting(meta.trimmed);
+      const nextMeta = findNextNonEmptyLine(i + 1);
+      const nextIsPhase = Boolean(nextMeta && phaseHeadingsByLine[nextMeta.lineNumber - 1]);
+      let nextHasNestedChildren = false;
+
+      if (nextMeta && !nextIsPhase) {
+        if (
+          isObviousChildTestLine(nextMeta.trimmed) ||
+          NUMBERED_LINE_RE.test(nextMeta.trimmed) ||
+          ENVIRONMENT_LINE_RE.test(nextMeta.trimmed) ||
+          INSTRUCTION_LINE_RE.test(nextMeta.trimmed)
+        ) {
+          nextHasNestedChildren = true;
+        }
+      }
+
+      const isLetteredCategory =
+        meta.indent <= 2 &&
+        meta.trimmed.length <= 80 &&
+        strippedFormatting.endsWith(':') &&
+        nextHasNestedChildren;
+
+      if (isLetteredCategory) {
+        addCategoryToCurrentContext(strippedFormatting);
+      } else {
+        addTestToCurrentContext(meta.trimmed, meta);
+      }
       continue;
     }
 

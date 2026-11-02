@@ -372,10 +372,10 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               const textWrap = document.createElement('div');
               textWrap.className = 'qa-clean-test-content';
 
-              if (tc.testId) {
+              if (tc.testId !== undefined && tc.testId !== null && String(tc.testId).trim() !== '') {
                 const idBadge = document.createElement('span');
                 idBadge.className = 'qa-test-id-chip';
-                idBadge.textContent = tc.testId;
+                idBadge.textContent = String(tc.testId);
                 textWrap.appendChild(idBadge);
               }
 
@@ -384,10 +384,10 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               bodySpan.textContent = tc.text;
               textWrap.appendChild(bodySpan);
 
-              if (tc.priority) {
+              if (tc.priority !== undefined && tc.priority !== null && String(tc.priority).trim() !== '') {
                 const prioBadge = document.createElement('span');
                 prioBadge.className = 'qa-test-prio-chip';
-                prioBadge.textContent = tc.priority;
+                prioBadge.textContent = String(tc.priority);
                 textWrap.appendChild(prioBadge);
               }
 
@@ -723,14 +723,14 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
               prioSelect.className = 'qa-inline-input qa-test-prio-select';
               prioSelect.setAttribute('aria-label', 'Test priority');
               prioSelect.title = 'Optional test priority';
-              const currentPrio = (tc.priority || '').trim();
+              const currentPrio = (tc.priority !== undefined && tc.priority !== null ? String(tc.priority) : '').trim();
               const prioOptions = STANDARD_PRIORITIES.includes(currentPrio)
                 ? STANDARD_PRIORITIES
                 : [...STANDARD_PRIORITIES, currentPrio];
               for (const optVal of prioOptions) {
                 const opt = document.createElement('option');
                 opt.value = optVal;
-                opt.textContent = optVal || 'Priority';
+                opt.textContent = optVal !== '' ? optVal : 'Priority';
                 if (optVal === currentPrio) opt.selected = true;
                 prioSelect.appendChild(opt);
               }
@@ -1014,7 +1014,7 @@ export function initChecklistGenerator({ notify, onChecklistStarted } = {}) {
 
       const lineBadge = document.createElement('span');
       lineBadge.className = 'qa-line-badge';
-      lineBadge.textContent = item.lineNumber ? `Line ${item.lineNumber}` : 'Unclassified';
+      lineBadge.textContent = (item.lineNumber !== undefined && item.lineNumber !== null && item.lineNumber !== '') ? `Line ${item.lineNumber}` : 'Unclassified';
 
       const input = document.createElement('input');
       input.type = 'text';

@@ -923,17 +923,18 @@ export function addPhaseToChecklist(checklistId, { phaseLabel = '', name = 'New 
   let createdPhase = null;
   const res = mutateChecklistById(checklistId, checklist => {
     const defaultLabel = `Phase ${checklist.phases.length + 1}`;
-    const assignedLabel = phaseLabel.trim() || defaultLabel;
-    const assignedNum = phaseLabel.trim()
+    const rawLabelStr = typeof phaseLabel === 'number' ? String(phaseLabel) : (typeof phaseLabel === 'string' ? phaseLabel : '');
+    const assignedLabel = rawLabelStr.trim() !== '' ? rawLabelStr.trim() : defaultLabel;
+    const assignedNum = rawLabelStr.trim() !== ''
       ? derivePhaseNumberFromLabel(assignedLabel, String(checklist.phases.length + 1))
       : String(checklist.phases.length + 1);
     createdPhase = {
       id: generateStableId('phase'),
       phaseLabel: assignedLabel,
       phaseNumber: assignedNum,
-      name: name.trim() || 'New Phase',
+      name: (typeof name === 'number' ? String(name) : (typeof name === 'string' ? name : '')).trim() || 'New Phase',
       isImplicit: false,
-      description: description.trim(),
+      description: typeof description === 'string' ? description.trim() : '',
       expanded: true,
       notes: [],
       sections: []
@@ -954,8 +955,10 @@ export function removePhaseFromChecklist(checklistId, phaseId) {
 }
 
 export function updateCategoryInChecklist(checklistId, phaseId, sectionId, newCategoryName) {
-  const cleanName = typeof newCategoryName === 'string' ? newCategoryName.trim() : '';
-  if (!cleanName) {
+  const cleanName = typeof newCategoryName === 'string'
+    ? newCategoryName.trim()
+    : (typeof newCategoryName === 'number' ? String(newCategoryName).trim() : '');
+  if (cleanName === '') {
     return { ok: false, checklist: null, error: 'Category name cannot be empty.' };
   }
   return mutateChecklistById(checklistId, checklist => {
@@ -973,10 +976,11 @@ export function addCategoryToChecklistPhase(checklistId, phaseId, categoryName =
   const res = mutateChecklistById(checklistId, checklist => {
     const phase = checklist.phases.find(p => p.id === phaseId);
     if (!phase) return false;
+    const rawCatStr = typeof categoryName === 'number' ? String(categoryName) : (typeof categoryName === 'string' ? categoryName : '');
     createdSection = {
       id: generateStableId('sec'),
       type: 'category',
-      name: categoryName.trim() || 'New Category',
+      name: rawCatStr.trim() !== '' ? rawCatStr.trim() : 'New Category',
       notes: [],
       tests: []
     };
@@ -1000,9 +1004,13 @@ export function updateTestInChecklist(checklistId, targetTestId, updates = {}) {
           }
           if (typeof updates.testId === 'string') {
             tc.testId = updates.testId.trim();
+          } else if (typeof updates.testId === 'number') {
+            tc.testId = String(updates.testId);
           }
           if (typeof updates.priority === 'string') {
             tc.priority = updates.priority.trim();
+          } else if (typeof updates.priority === 'number') {
+            tc.priority = String(updates.priority);
           }
           // Strictly preserve tc.completed & tc.status!
           return true;
@@ -1019,8 +1027,8 @@ export function addTestToChecklistPhase(
   sectionIdOrNull = null,
   { testId = '', priority = '', text = '' } = {}
 ) {
-  const cleanText = typeof text === 'string' ? text.trim() : '';
-  if (!cleanText) {
+  const cleanText = typeof text === 'string' ? text.trim() : (typeof text === 'number' ? String(text).trim() : '');
+  if (cleanText === '') {
     return { ok: false, checklist: null, error: 'Test description cannot be empty.' };
   }
 
@@ -1050,8 +1058,8 @@ export function addTestToChecklistPhase(
 
     createdTest = {
       id: generateStableId('test'),
-      testId: typeof testId === 'string' ? testId.trim() : '',
-      priority: typeof priority === 'string' ? priority.trim() : '',
+      testId: typeof testId === 'string' ? testId.trim() : (typeof testId === 'number' ? String(testId) : ''),
+      priority: typeof priority === 'string' ? priority.trim() : (typeof priority === 'number' ? String(priority) : ''),
       text: cleanText,
       status: TEST_STATUS.NOT_STARTED,
       completed: false

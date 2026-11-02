@@ -297,13 +297,13 @@ import {
               const caseStatus = validStatuses.includes(tc.status) ? tc.status : 'Not Run';
 
               return {
-                id: tc.id || `TC-${String(tcIdx + 1).padStart(3, '0')}`,
+                id: (tc.id !== undefined && tc.id !== null && String(tc.id).trim() !== '') ? String(tc.id).trim() : `TC-${String(tcIdx + 1).padStart(3, '0')}`,
                 title: tc.title || 'Untitled Test Case',
                 description: typeof tc.description === 'string' ? tc.description.trim() : '',
                 preconditions: typeof tc.preconditions === 'string' ? tc.preconditions.trim() : '',
                 steps: steps,
                 expectedResult: typeof tc.expectedResult === 'string' ? tc.expectedResult.trim() : '',
-                priority: ['Critical', 'High', 'Medium', 'Low'].includes(tc.priority) ? tc.priority : 'High',
+                priority: ['Critical', 'High', 'Medium', 'Low'].includes(tc.priority) ? tc.priority : (classifyPriority(tc.priority) || 'High'),
                 category: tc.category || s.category || 'Functional',
                 tags: Array.isArray(tc.tags) ? tc.tags : [],
                 status: caseStatus,
@@ -333,7 +333,7 @@ import {
           // Normalize Executions Array (Prompt 4)
           const executions = Array.isArray(p.executions) ? p.executions.map(ex => ({
             id: ex.id || ('exec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)),
-            testCaseId: ex.testCaseId || '',
+            testCaseId: (ex.testCaseId !== undefined && ex.testCaseId !== null) ? String(ex.testCaseId) : '',
             testCaseTitle: ex.testCaseTitle || '',
             suiteId: ex.suiteId || '',
             phaseId: ex.phaseId || '',
@@ -357,7 +357,7 @@ import {
 
             return {
               id: df.id || `DEF-${String(dfIdx + 1).padStart(3, '0')}`,
-              testCaseId: df.testCaseId || '',
+              testCaseId: (df.testCaseId !== undefined && df.testCaseId !== null) ? String(df.testCaseId) : '',
               executionId: df.executionId || '',
               title: df.title || 'Untitled Defect',
               description: typeof df.description === 'string' ? df.description.trim() : '',
@@ -1425,7 +1425,7 @@ import {
         ? escapeHTML(proj.description)
         : '<em style="color: var(--text-muted);">No description provided</em>';
 
-      const casesCount = Number(proj.testCaseCount) || 0;
+      const casesCount = Number.isFinite(Number(proj.testCaseCount)) ? Number(proj.testCaseCount) : 0;
 
       html += `
         <article class="project-item" data-id="${escapeHTML(proj.id)}" style="cursor: pointer;" title="Click to view project details">
@@ -1643,12 +1643,14 @@ import {
         ? escapeHTML(proj.description)
         : '<em style="color: var(--text-muted);">No description provided</em>';
 
-      const casesCount = Number(proj.testCaseCount) || 0;
-      const passedCount = Number(proj.passedTests) || 0;
-      const failedCount = Number(proj.failedTests) || 0;
-      const blockedCount = Number(proj.blockedTests) || 0;
-      const skippedCount = Number(proj.skippedTests) || 0;
-      const executed = Number(proj.executedTests) || (passedCount + failedCount + blockedCount + skippedCount);
+      const casesCount = Number.isFinite(Number(proj.testCaseCount)) ? Number(proj.testCaseCount) : 0;
+      const passedCount = Number.isFinite(Number(proj.passedTests)) ? Number(proj.passedTests) : 0;
+      const failedCount = Number.isFinite(Number(proj.failedTests)) ? Number(proj.failedTests) : 0;
+      const blockedCount = Number.isFinite(Number(proj.blockedTests)) ? Number(proj.blockedTests) : 0;
+      const skippedCount = Number.isFinite(Number(proj.skippedTests)) ? Number(proj.skippedTests) : 0;
+      const executed = Number.isFinite(Number(proj.executedTests))
+        ? Number(proj.executedTests)
+        : (passedCount + failedCount + blockedCount + skippedCount);
       const progressPercent = casesCount > 0 ? Math.round((executed / casesCount) * 100) : 0;
       const passRate = executed > 0 ? Math.round((passedCount / executed) * 100) : 0;
 
@@ -1846,12 +1848,14 @@ import {
     // Testing Metrics Calculations
     const phases = project.testPlan?.phases || [];
     const suites = project.testSuites || [];
-    const casesCount = Number(project.testCaseCount) || 0;
-    const passedCount = Number(project.passedTests) || 0;
-    const failedCount = Number(project.failedTests) || 0;
-    const blockedCount = Number(project.blockedTests) || 0;
-    const skippedCount = Number(project.skippedTests) || 0;
-    const totalExecuted = Number(project.executedTests) || (passedCount + failedCount + blockedCount + skippedCount);
+    const casesCount = Number.isFinite(Number(project.testCaseCount)) ? Number(project.testCaseCount) : 0;
+    const passedCount = Number.isFinite(Number(project.passedTests)) ? Number(project.passedTests) : 0;
+    const failedCount = Number.isFinite(Number(project.failedTests)) ? Number(project.failedTests) : 0;
+    const blockedCount = Number.isFinite(Number(project.blockedTests)) ? Number(project.blockedTests) : 0;
+    const skippedCount = Number.isFinite(Number(project.skippedTests)) ? Number(project.skippedTests) : 0;
+    const totalExecuted = Number.isFinite(Number(project.executedTests))
+      ? Number(project.executedTests)
+      : (passedCount + failedCount + blockedCount + skippedCount);
     const notRunCount = Number.isFinite(Number(project.notRunTests)) ? Number(project.notRunTests) : Math.max(0, casesCount - totalExecuted);
     const progressPercent = Number.isFinite(Number(project.completionRate)) ? Number(project.completionRate) : (casesCount > 0 ? Math.round((totalExecuted / casesCount) * 100) : 0);
 
@@ -3050,7 +3054,7 @@ import {
 
       if (DOM.caseIdInput) DOM.caseIdInput.value = tc.id;
       if (DOM.caseTitleInput) DOM.caseTitleInput.value = tc.title;
-      if (DOM.casePrioritySelect) DOM.casePrioritySelect.value = tc.priority || 'High';
+      if (DOM.casePrioritySelect) DOM.casePrioritySelect.value = classifyPriority(tc.priority) || (tc.priority !== undefined && tc.priority !== null ? String(tc.priority) : 'High');
       if (DOM.caseCategoryInput) DOM.caseCategoryInput.value = tc.category || suite.category || 'Functional';
       if (DOM.caseTagsInput) DOM.caseTagsInput.value = (tc.tags || []).join(', ');
       if (DOM.caseDescInput) DOM.caseDescInput.value = tc.description || '';
@@ -3596,13 +3600,15 @@ import {
     }
 
     // Compute and Render Execution KPI Metrics (Strict Formulas)
-    const totalCases = Number(project.testCaseCount) || 0;
-    const passedCount = Number(project.passedTests) || 0;
-    const failedCount = Number(project.failedTests) || 0;
-    const blockedCount = Number(project.blockedTests) || 0;
-    const skippedCount = Number(project.skippedTests) || 0;
+    const totalCases = Number.isFinite(Number(project.testCaseCount)) ? Number(project.testCaseCount) : 0;
+    const passedCount = Number.isFinite(Number(project.passedTests)) ? Number(project.passedTests) : 0;
+    const failedCount = Number.isFinite(Number(project.failedTests)) ? Number(project.failedTests) : 0;
+    const blockedCount = Number.isFinite(Number(project.blockedTests)) ? Number(project.blockedTests) : 0;
+    const skippedCount = Number.isFinite(Number(project.skippedTests)) ? Number(project.skippedTests) : 0;
     const notRunCount = Number.isFinite(Number(project.notRunTests)) ? Number(project.notRunTests) : Math.max(0, totalCases - (passedCount + failedCount + blockedCount + skippedCount));
-    const executedCount = passedCount + failedCount + blockedCount + skippedCount;
+    const executedCount = Number.isFinite(Number(project.executedTests))
+      ? Number(project.executedTests)
+      : (passedCount + failedCount + blockedCount + skippedCount);
     const completionRate = totalCases > 0 ? Math.round((executedCount / totalCases) * 100) : 0;
     const passRate = executedCount > 0 ? Math.round((passedCount / executedCount) * 100) : 0;
 
@@ -3945,7 +3951,7 @@ import {
     // Defect Section Setup
     if (DOM.execDefectSection) DOM.execDefectSection.style.display = 'none';
     if (DOM.execDefectTitle) DOM.execDefectTitle.value = `[Defect] ${targetCase.title}`;
-    if (DOM.execDefectSeverity) DOM.execDefectSeverity.value = targetCase.priority || 'High';
+    if (DOM.execDefectSeverity) DOM.execDefectSeverity.value = classifyPriority(targetCase.priority) || (targetCase.priority !== undefined && targetCase.priority !== null ? String(targetCase.priority) : 'High');
     if (DOM.execDefectSteps) {
       const stepsText = rawSteps.map((st, idx) => {
         const hasData = st.testData !== undefined && st.testData !== null && String(st.testData).trim() !== '';
@@ -4814,7 +4820,7 @@ import {
       if (DOM.defectDescInput) DOM.defectDescInput.value = df.description || '';
       if (DOM.defectUrlInput) DOM.defectUrlInput.value = df.externalIssueUrl || '';
 
-      if (DOM.defectLinkedCaseSelect) DOM.defectLinkedCaseSelect.value = df.testCaseId || '';
+      if (DOM.defectLinkedCaseSelect) DOM.defectLinkedCaseSelect.value = (df.testCaseId !== undefined && df.testCaseId !== null) ? String(df.testCaseId) : '';
     } else {
       if (DOM.defectIdInput) DOM.defectIdInput.value = '';
       if (DOM.defectProjectIdInput) DOM.defectProjectIdInput.value = selectedProjectId;
@@ -5026,8 +5032,9 @@ import {
     }
 
     if (DOM.viewDefectLinkedCase) {
-      DOM.viewDefectLinkedCase.textContent = df.testCaseId || 'None (Independent)';
-      if (df.testCaseId) {
+      const hasLinkedTest = df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '';
+      DOM.viewDefectLinkedCase.textContent = hasLinkedTest ? String(df.testCaseId) : 'None (Independent)';
+      if (hasLinkedTest) {
         DOM.viewDefectLinkedCase.style.cursor = 'pointer';
         DOM.viewDefectLinkedCase.onclick = () => {
           closeDefectViewModal();
@@ -6704,7 +6711,7 @@ import {
             </td>
             <td>
               <div style="font-weight: 600;" title="${escapeHTML(df.title)}">${escapeHTML(df.title)}</div>
-              ${df.testCaseId ? `<div style="font-size: 0.6875rem; color: var(--text-muted);">Linked: ${escapeHTML(df.testCaseId)}</div>` : ''}
+              ${(df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '') ? `<div style="font-size: 0.6875rem; color: var(--text-muted);">Linked: ${escapeHTML(String(df.testCaseId))}</div>` : ''}
             </td>
             <td>
               <span class="priority-badge ${sevClass}">${escapeHTML(displayPriority)}</span>
@@ -6773,6 +6780,9 @@ import {
 
     data.filteredExecutions.slice(0, 15).forEach(ex => {
       const statClass = getExecutionStatusBadgeClass(ex.status);
+      const caseTitleDisplay = (ex.testCaseTitle !== undefined && ex.testCaseTitle !== null && String(ex.testCaseTitle).trim() !== '')
+        ? String(ex.testCaseTitle)
+        : ((ex.testCaseId !== undefined && ex.testCaseId !== null) ? String(ex.testCaseId) : '');
       html += `
         <tr>
           <td>
@@ -6783,8 +6793,8 @@ import {
             <span class="testcase-id-badge">${escapeHTML(ex.testCaseId)}</span>
           </td>
           <td>
-            <div style="font-weight: 600;" title="${escapeHTML(ex.testCaseTitle || ex.testCaseId)}">
-              ${escapeHTML(ex.testCaseTitle || ex.testCaseId)}
+            <div style="font-weight: 600;" title="${escapeHTML(caseTitleDisplay)}">
+              ${escapeHTML(caseTitleDisplay)}
             </div>
             ${ex.actualResult ? `<div style="font-size: 0.6875rem; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 280px;">${escapeHTML(ex.actualResult)}</div>` : ''}
           </td>
@@ -6913,7 +6923,7 @@ import {
         });
       }
       if (Array.isArray(p.executions)) totalExecs += p.executions.length;
-      totalDefects += p.totalDefects || 0;
+      totalDefects += p.totalDefects ?? 0;
     });
 
     if (DOM.dataStatProjects) DOM.dataStatProjects.textContent = projects.length.toString();
@@ -6950,7 +6960,7 @@ import {
         if (DOM.btnExportProjectJson) DOM.btnExportProjectJson.disabled = true;
       } else {
         DOM.exportProjectSelect.innerHTML = projects.map(p => `
-          <option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${p.testCaseCount || 0} cases)</option>
+          <option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${p.testCaseCount ?? 0} cases)</option>
         `).join('');
         if (prevVal && projects.some(p => p.id === prevVal)) {
           DOM.exportProjectSelect.value = prevVal;
@@ -7040,10 +7050,10 @@ import {
       type: 'project',
       exportedAt: new Date().toISOString(),
       metadata: {
-        totalCases: project.testCaseCount || 0,
+        totalCases: project.testCaseCount ?? 0,
         totalSuites: project.testSuites ? project.testSuites.length : 0,
         totalExecutions: project.executions ? project.executions.length : 0,
-        totalDefects: project.totalDefects || 0
+        totalDefects: project.totalDefects ?? 0
       },
       project: project
     };
@@ -7071,9 +7081,9 @@ import {
     projects.forEach(p => {
       if (p.testPlan) totalPlans++;
       if (Array.isArray(p.testSuites)) totalSuites += p.testSuites.length;
-      totalCases += p.testCaseCount || 0;
+      totalCases += p.testCaseCount ?? 0;
       if (Array.isArray(p.executions)) totalExecs += p.executions.length;
-      totalDefects += p.totalDefects || 0;
+      totalDefects += p.totalDefects ?? 0;
     });
 
     const payload = {
@@ -7347,15 +7357,15 @@ import {
     let openDefects = 0;
 
     targetProjects.forEach(p => {
-      totalCases += p.testCaseCount || 0;
-      passedCases += p.passedTests || 0;
-      failedCases += p.failedTests || 0;
-      blockedCases += p.blockedTests || 0;
-      skippedCases += p.skippedTests || 0;
-      notRunCases += p.notRunTests || 0;
-      executedCases += p.executedTests || 0;
-      totalDefects += p.totalDefects || 0;
-      openDefects += p.openDefects || 0;
+      totalCases += p.testCaseCount ?? 0;
+      passedCases += p.passedTests ?? 0;
+      failedCases += p.failedTests ?? 0;
+      blockedCases += p.blockedTests ?? 0;
+      skippedCases += p.skippedTests ?? 0;
+      notRunCases += p.notRunTests ?? 0;
+      executedCases += p.executedTests ?? 0;
+      totalDefects += p.totalDefects ?? 0;
+      openDefects += p.openDefects ?? 0;
     });
 
     const passRate = executedCases > 0 ? Math.round((passedCases / executedCases) * 100) : 0;
@@ -7802,7 +7812,7 @@ import {
       const projPills = rawProjects.map(p => {
         const cCnt = Array.isArray(p.testSuites)
           ? p.testSuites.reduce((acc, s) => acc + (Array.isArray(s.testCases) ? s.testCases.length : 0), 0)
-          : (p.testCaseCount || 0);
+          : (p.testCaseCount ?? 0);
         return `
           <span class="import-proj-pill">
             <strong>${escapeHTML(p.name || 'Untitled Project')}</strong>

@@ -808,14 +808,15 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       prioSelect.className = 'qa-inline-input qa-test-prio-select';
       prioSelect.setAttribute('aria-label', 'Edit test priority');
       const prioChoices = ['', 'Critical', 'High', 'Medium', 'Low'];
-      if (tc.priority && !prioChoices.includes(tc.priority)) {
-        prioChoices.push(tc.priority);
+      const rawPrio = tc.priority !== undefined && tc.priority !== null ? String(tc.priority).trim() : '';
+      if (rawPrio !== '' && !prioChoices.includes(rawPrio)) {
+        prioChoices.push(rawPrio);
       }
       for (const optVal of prioChoices) {
         const opt = document.createElement('option');
         opt.value = optVal;
-        opt.textContent = optVal ? optVal : 'No Prio';
-        if ((tc.priority || '') === optVal) {
+        opt.textContent = optVal !== '' ? optVal : 'No Prio';
+        if (rawPrio === optVal) {
           opt.selected = true;
         }
         prioSelect.appendChild(opt);
@@ -854,10 +855,10 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       label.htmlFor = checkboxId;
       label.className = 'qa-runner-test-label';
 
-      if (tc.testId) {
+      if (tc.testId !== undefined && tc.testId !== null && String(tc.testId).trim() !== '') {
         const idChip = document.createElement('span');
         idChip.className = 'qa-test-id-chip';
-        idChip.textContent = tc.testId;
+        idChip.textContent = String(tc.testId);
         label.appendChild(idChip);
       }
 
@@ -866,10 +867,10 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       textSpan.textContent = tc.text;
       label.appendChild(textSpan);
 
-      if (tc.priority) {
+      if (tc.priority !== undefined && tc.priority !== null && String(tc.priority).trim() !== '') {
         const prioChip = document.createElement('span');
         prioChip.className = 'qa-test-prio-chip';
-        prioChip.textContent = tc.priority;
+        prioChip.textContent = String(tc.priority);
         label.appendChild(prioChip);
       }
 
