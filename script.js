@@ -19,7 +19,10 @@ import {
   comparePhaseNumbers,
   isQuotaExceededError,
   isSecurityError,
-  getStorageErrorMessage
+  getStorageErrorMessage,
+  safeStorageWrite,
+  safeStorageRead,
+  safeStorageRemove
 } from './qaChecklistStore.js';
 
 (function () {
@@ -234,7 +237,7 @@ import {
   const Storage = {
     getProjects() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEYS.PROJECTS);
+        const { raw } = safeStorageRead(STORAGE_KEYS.PROJECTS);
         if (!raw) return [];
         let parsed;
         try {
@@ -444,27 +447,27 @@ import {
 
     saveProjects(projects) {
       try {
-        localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
-        return {
-          ok: true,
-          error: null,
-          isQuota: false,
-          isSecurity: false,
-          valueOf() { return true; }
-        };
+        const payload = JSON.stringify(projects);
+        const res = safeStorageWrite(STORAGE_KEYS.PROJECTS, payload, 'saving projects');
+        if (!res.ok) {
+          if (typeof showToast === 'function') {
+            showToast(res.error, 'error');
+          }
+        }
+        return res;
       } catch (err) {
         const isQuota = isQuotaExceededError(err);
         const isSecurity = isSecurityError(err);
         const errorMsg = getStorageErrorMessage(err, 'saving projects');
-        console.error('TestPilot: Failed to persist projects to localStorage', err);
+        console.error('TestPilot: Failed to persist projects to storage', err);
         if (typeof showToast === 'function') {
-          showToast(isQuota ? `Storage Quota Exceeded: ${errorMsg}` : errorMsg, 'error');
+          showToast(errorMsg, 'error');
         }
         return {
           ok: false,
           error: errorMsg,
-          isQuota: isQuota,
-          isSecurity: isSecurity,
+          isQuota,
+          isSecurity,
           valueOf() { return false; }
         };
       }
@@ -472,7 +475,7 @@ import {
 
     getActivities() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
+        const { raw } = safeStorageRead(STORAGE_KEYS.ACTIVITIES);
         if (!raw) return [];
         let parsed;
         try {
@@ -489,14 +492,8 @@ import {
 
     saveActivities(activities) {
       try {
-        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities));
-        return {
-          ok: true,
-          error: null,
-          isQuota: false,
-          isSecurity: false,
-          valueOf() { return true; }
-        };
+        const payload = JSON.stringify(activities);
+        return safeStorageWrite(STORAGE_KEYS.ACTIVITIES, payload, 'saving activities');
       } catch (err) {
         console.error('TestPilot: Failed to persist activities', err);
         return {
@@ -530,7 +527,7 @@ import {
 
     clearActivities() {
       try {
-        localStorage.removeItem(STORAGE_KEYS.ACTIVITIES);
+        safeStorageRemove(STORAGE_KEYS.ACTIVITIES);
       } catch (err) {
         console.error('TestPilot: Failed to clear activities', err);
       }
@@ -569,7 +566,8 @@ import {
 
     getTheme() {
       try {
-        return localStorage.getItem(STORAGE_KEYS.THEME) || 'dark';
+        const { raw } = safeStorageRead(STORAGE_KEYS.THEME);
+        return raw || 'dark';
       } catch {
         return 'dark';
       }
@@ -577,7 +575,7 @@ import {
 
     saveTheme(theme) {
       try {
-        localStorage.setItem(STORAGE_KEYS.THEME, theme);
+        return safeStorageWrite(STORAGE_KEYS.THEME, theme, 'saving theme');
       } catch (err) {
         console.error('TestPilot: Failed to save theme', err);
       }
@@ -2738,7 +2736,10 @@ import {
     project.testPlan.updatedAt = new Date().toISOString();
     project.updatedAt = new Date().toISOString();
 
-    Storage.saveProjects(projects);
+    const saveRes = Storage.saveProjects(projects);
+    if (!saveRes.ok) {
+      return;
+    }
     Storage.addActivity('Updated test plan', name);
 
     closeTestPlanModal();
@@ -2835,10 +2836,25 @@ import {
         showPhaseError('Phase not found.');
         return;
       }
+      const prevName = phase.name;
+      const prevDesc = phase.description;
       phase.name = name;
       phase.description = description;
+
+      project.testPlan.updatedAt = new Date().toISOString();
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        phase.name = prevName;
+        phase.description = prevDesc;
+        showPhaseError(saveRes.error || 'Failed to save phase to storage.');
+        return;
+      }
+
       Storage.addActivity('Updated testing phase', name);
       showToast(`Phase "${name}" updated.`, 'success');
+      closePhaseModal();
     } else {
       // Create Phase
       const newPhase = {
@@ -2848,15 +2864,21 @@ import {
         order: project.testPlan.phases.length
       };
       project.testPlan.phases.push(newPhase);
+
+      project.testPlan.updatedAt = new Date().toISOString();
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        project.testPlan.phases.pop();
+        showPhaseError(saveRes.error || 'Failed to save phase to storage.');
+        return;
+      }
+
       Storage.addActivity('Created testing phase', name);
       showToast(`Testing phase "${name}" created!`, 'success');
+      closePhaseModal();
     }
-
-    project.testPlan.updatedAt = new Date().toISOString();
-    project.updatedAt = new Date().toISOString();
-
-    Storage.saveProjects(projects);
-    closePhaseModal();
 
     renderTestPlansWorkspace();
     renderDashboard();
@@ -2885,7 +2907,12 @@ import {
     phases[targetIdx].order = currentOrder;
 
     project.testPlan.updatedAt = new Date().toISOString();
-    Storage.saveProjects(projects);
+    const saveRes = Storage.saveProjects(projects);
+    if (!saveRes.ok) {
+      phases[idx].order = currentOrder;
+      phases[targetIdx].order = phases[idx].order;
+      return;
+    }
 
     renderTestPlansWorkspace();
   }
@@ -3025,15 +3052,33 @@ import {
         showSuiteError('Test suite could not be found.');
         return;
       }
+      const prevSuiteState = {
+        phaseId: suite.phaseId,
+        name: suite.name,
+        category: suite.category,
+        tags: [...(suite.tags || [])],
+        description: suite.description,
+        updatedAt: suite.updatedAt
+      };
+
       suite.phaseId = phaseId;
       suite.name = name;
       suite.category = category;
       suite.tags = tags;
       suite.description = description;
       suite.updatedAt = new Date().toISOString();
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        Object.assign(suite, prevSuiteState);
+        showSuiteError(saveRes.error || 'Failed to save suite to storage.');
+        return;
+      }
 
       Storage.addActivity('Updated test suite', name);
       showToast(`Suite "${name}" updated.`, 'success');
+      closeSuiteModal();
     } else {
       // Create Suite
       const newSuite = {
@@ -3049,14 +3094,20 @@ import {
         testCases: []
       };
       project.testSuites.push(newSuite);
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        project.testSuites.pop();
+        showSuiteError(saveRes.error || 'Failed to save suite to storage.');
+        return;
+      }
+
       Storage.addActivity('Created test suite', name);
       showToast(`Test suite "${name}" created!`, 'success');
+      closeSuiteModal();
     }
 
-    project.updatedAt = new Date().toISOString();
-    Storage.saveProjects(projects);
-
-    closeSuiteModal();
     renderTestPlansWorkspace();
     renderDashboard();
 
@@ -3326,6 +3377,18 @@ import {
         return;
       }
 
+      const prevCaseState = {
+        title: tc.title,
+        priority: tc.priority,
+        category: tc.category,
+        tags: [...(tc.tags || [])],
+        description: tc.description,
+        preconditions: tc.preconditions,
+        steps: [...(tc.steps || [])],
+        expectedResult: tc.expectedResult,
+        updatedAt: tc.updatedAt
+      };
+
       tc.title = title;
       tc.priority = priority;
       tc.category = category;
@@ -3335,9 +3398,19 @@ import {
       tc.steps = cleanedSteps;
       tc.expectedResult = expectedResult;
       tc.updatedAt = new Date().toISOString();
+      suite.updatedAt = new Date().toISOString();
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        Object.assign(tc, prevCaseState);
+        showCaseError(saveRes.error || 'Failed to save test case to storage.');
+        return;
+      }
 
       Storage.addActivity('Updated test case', `${tc.id}: ${title}`);
       showToast(`Test Case ${tc.id} updated!`, 'success');
+      closeTestCaseModal();
     } else {
       // Create Case with unique ID
       const newId = generateUniqueCaseId(projects);
@@ -3358,15 +3431,20 @@ import {
       };
 
       suite.testCases.push(newCase);
+      suite.updatedAt = new Date().toISOString();
+      project.updatedAt = new Date().toISOString();
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        suite.testCases.pop();
+        showCaseError(saveRes.error || 'Failed to save test case to storage.');
+        return;
+      }
+
       Storage.addActivity('Created test case', `${newId}: ${title}`);
       showToast(`Test Case ${newId} created!`, 'success');
+      closeTestCaseModal();
     }
-
-    suite.updatedAt = new Date().toISOString();
-    project.updatedAt = new Date().toISOString();
-
-    Storage.saveProjects(projects);
-    closeTestCaseModal();
 
     renderTestPlansWorkspace();
     renderDashboard();
@@ -3425,7 +3503,15 @@ import {
     suite.updatedAt = new Date().toISOString();
     project.updatedAt = new Date().toISOString();
 
-    Storage.saveProjects(projects);
+    const saveRes = Storage.saveProjects(projects);
+    if (!saveRes.ok) {
+      const idxToRemove = suite.testCases.findIndex(c => c.id === newId);
+      if (idxToRemove !== -1) {
+        suite.testCases.splice(idxToRemove, 1);
+      }
+      return;
+    }
+
     Storage.addActivity('Duplicated test case', `${newId}: ${cloned.title}`);
     showToast(`Test case duplicated as ${newId}`, 'success');
 
@@ -4320,6 +4406,14 @@ import {
       executedAt: new Date().toISOString()
     };
 
+    const prevCaseStatus = targetCase.status;
+    const prevLastExecutedAt = targetCase.lastExecutedAt;
+    const prevLastExecutionId = targetCase.lastExecutionId;
+    const prevCaseExecs = Array.isArray(targetCase.executions) ? [...targetCase.executions] : [];
+    const prevCaseDefects = Array.isArray(targetCase.defectIds) ? [...targetCase.defectIds] : [];
+    const prevProjectExecs = Array.isArray(project.executions) ? [...project.executions] : [];
+    const prevProjectDefects = Array.isArray(project.defects) ? [...project.defects] : [];
+
     if (!Array.isArray(project.executions)) project.executions = [];
     project.executions.unshift(executionRecord);
 
@@ -4334,7 +4428,18 @@ import {
     project.updatedAt = executionRecord.executedAt;
     targetSuite.updatedAt = executionRecord.executedAt;
 
-    Storage.saveProjects(projects);
+    const saveRes = Storage.saveProjects(projects);
+    if (!saveRes.ok) {
+      project.executions = prevProjectExecs;
+      project.defects = prevProjectDefects;
+      targetCase.status = prevCaseStatus;
+      targetCase.lastExecutedAt = prevLastExecutedAt;
+      targetCase.lastExecutionId = prevLastExecutionId;
+      targetCase.executions = prevCaseExecs;
+      targetCase.defectIds = prevCaseDefects;
+      showExecError(saveRes.error || 'Failed to save test execution to storage.');
+      return;
+    }
 
     const defectText = defectId ? ` (Logged ${defectId})` : '';
     Storage.addActivity('Executed test case', `${targetCase.id} [${status}]${defectText}`);
@@ -4951,6 +5056,20 @@ import {
       const df = project.defects.find(d => d.id === defectId);
       if (!df) return;
 
+      const prevDefectState = {
+        title: df.title,
+        priority: df.priority,
+        severity: df.severity,
+        status: df.status,
+        testCaseId: df.testCaseId,
+        stepsToReproduce: df.stepsToReproduce,
+        expectedResult: df.expectedResult,
+        actualResult: df.actualResult,
+        description: df.description,
+        externalIssueUrl: df.externalIssueUrl,
+        updatedAt: df.updatedAt
+      };
+
       df.title = title;
       df.priority = severity;
       df.severity = severity;
@@ -4975,8 +5094,17 @@ import {
         });
       }
 
+      project.updatedAt = new Date().toISOString();
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        Object.assign(df, prevDefectState);
+        showDefectError(saveRes.error || 'Failed to save defect to storage.');
+        return;
+      }
+
       Storage.addActivity('Updated defect', `${df.id}: ${title}`);
       showToast(`Defect ${df.id} updated!`, 'success');
+      closeDefectModal();
     } else {
       // Create new defect
       const newId = generateUniqueDefectId(projects);
@@ -5012,14 +5140,19 @@ import {
         });
       }
 
+      project.updatedAt = new Date().toISOString();
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        project.defects.shift();
+        showDefectError(saveRes.error || 'Failed to save defect to storage.');
+        return;
+      }
+
       Storage.addActivity('Created defect', `${newId}: ${title}`);
       showToast(`Defect ${newId} logged!`, 'success');
+      closeDefectModal();
     }
 
-    project.updatedAt = new Date().toISOString();
-    Storage.saveProjects(projects);
-
-    closeDefectModal();
     renderDefectsWorkspace();
     renderDashboard();
     renderTestExecutionWorkspace();
@@ -5148,7 +5281,11 @@ import {
     df.updatedAt = new Date().toISOString();
     project.updatedAt = df.updatedAt;
 
-    Storage.saveProjects(projects);
+    const saveRes = Storage.saveProjects(projects);
+    if (!saveRes.ok) {
+      df.status = oldStatus;
+      return;
+    }
     Storage.addActivity('Updated defect status', `${df.id} (${oldStatus} → ${newStatus})`);
     showToast(`Defect ${df.id} marked as ${newStatus}`, 'info');
 
@@ -5302,7 +5439,10 @@ import {
       }
 
       const updated = projects.filter(p => p.id !== targetId);
-      Storage.saveProjects(updated);
+      const saveRes = Storage.saveProjects(updated);
+      if (!saveRes.ok) {
+        return;
+      }
       Storage.addActivity('Deleted project', targetProj.name || targetId);
       showToast(`Project deleted.`, 'info');
 
@@ -5359,7 +5499,10 @@ import {
         }
         project.updatedAt = new Date().toISOString();
 
-        Storage.saveProjects(projects);
+        const saveRes = Storage.saveProjects(projects);
+        if (!saveRes.ok) {
+          return;
+        }
         Storage.addActivity('Deleted testing phase', ph ? ph.name : targetId);
         showToast(`Phase deleted.`, 'info');
       }
@@ -5379,7 +5522,10 @@ import {
         }
         project.updatedAt = new Date().toISOString();
 
-        Storage.saveProjects(projects);
+        const saveRes = Storage.saveProjects(projects);
+        if (!saveRes.ok) {
+          return;
+        }
         Storage.addActivity('Deleted test suite', suite ? suite.name : targetId);
         showToast(`Test suite deleted.`, 'info');
 
@@ -5406,7 +5552,10 @@ import {
           }
         }
 
-        Storage.saveProjects(projects);
+        const saveRes = Storage.saveProjects(projects);
+        if (!saveRes.ok) {
+          return;
+        }
         Storage.addActivity('Deleted test case', tc ? tc.id : targetId);
         showToast(`Test case deleted.`, 'info');
       }
@@ -5426,7 +5575,10 @@ import {
         });
         project.updatedAt = new Date().toISOString();
 
-        Storage.saveProjects(projects);
+        const saveRes = Storage.saveProjects(projects);
+        if (!saveRes.ok) {
+          return;
+        }
         Storage.addActivity('Deleted defect', df ? `${df.id} (${df.title})` : targetId);
         showToast(`Defect deleted.`, 'info');
       }
@@ -5536,6 +5688,15 @@ import {
       if (idx === -1) return;
 
       const p = projects[idx];
+      const prevProjectState = {
+        name: p.name,
+        type: p.type,
+        status: p.status,
+        version: p.version,
+        description: p.description,
+        updatedAt: p.updatedAt
+      };
+
       p.name = name;
       p.type = type;
       p.status = status;
@@ -5543,8 +5704,16 @@ import {
       p.description = description;
       p.updatedAt = new Date().toISOString();
 
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        Object.assign(p, prevProjectState);
+        showModalError(saveRes.error || 'Failed to save project changes to storage.');
+        return;
+      }
+
       Storage.addActivity('Updated project', name);
       showToast(`Project "${name}" updated.`, 'success');
+      closeProjectModal();
     } else {
       const newId = 'proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       const newProj = {
@@ -5584,12 +5753,18 @@ import {
       };
 
       projects.unshift(newProj);
+
+      const saveRes = Storage.saveProjects(projects);
+      if (!saveRes.ok) {
+        projects.shift();
+        showModalError(saveRes.error || 'Failed to save new project to storage.');
+        return;
+      }
+
       Storage.addActivity('Created new project', name);
       showToast(`Project "${name}" created!`, 'success');
+      closeProjectModal();
     }
-
-    Storage.saveProjects(projects);
-    closeProjectModal();
 
     renderDashboard();
     renderMyProjects();
@@ -7018,11 +7193,11 @@ import {
 
     // Storage footprint calculation
     try {
-      const projRaw = localStorage.getItem(STORAGE_KEYS.PROJECTS) || '';
-      const actRaw = localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '';
-      const themeRaw = localStorage.getItem(STORAGE_KEYS.THEME) || '';
-      const qaChkRaw = localStorage.getItem(CHECKLISTS_STORAGE_KEY) || '';
-      const qaRunRaw = localStorage.getItem(ACTIVE_RUNNER_STORAGE_KEY) || '';
+      const projRaw = safeStorageRead(STORAGE_KEYS.PROJECTS).raw || '';
+      const actRaw = safeStorageRead(STORAGE_KEYS.ACTIVITIES).raw || '';
+      const themeRaw = safeStorageRead(STORAGE_KEYS.THEME).raw || '';
+      const qaChkRaw = safeStorageRead(CHECKLISTS_STORAGE_KEY).raw || '';
+      const qaRunRaw = safeStorageRead(ACTIVE_RUNNER_STORAGE_KEY).raw || '';
       const totalBytes = (projRaw.length + actRaw.length + themeRaw.length + qaChkRaw.length + qaRunRaw.length) * 2; // UTF-16
       const kb = (totalBytes / 1024).toFixed(1);
       const quotaBytes = 5 * 1024 * 1024; // ~5 MB quota
@@ -7962,9 +8137,18 @@ import {
       Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
 
       // 2. Persist imported projects through the normalization engine
-      Storage.saveProjects(importedRaw);
+      const saveProjRes = Storage.saveProjects(importedRaw);
+      if (!saveProjRes.ok) {
+        showToast(`Import failed: ${saveProjRes.error || 'Unable to save imported projects.'}`, 'error');
+        return;
+      }
       const normalized = Storage.getProjects();
-      Storage.saveProjects(normalized);
+      const saveNormRes = Storage.saveProjects(normalized);
+      if (!saveNormRes.ok) {
+        Storage.saveProjects(currentProjects);
+        showToast(`Import failed: ${saveNormRes.error || 'Unable to normalize imported projects.'}`, 'error');
+        return;
+      }
 
       // 3. Replace QA checklists only when the backup explicitly includes qaChecklists
       let restoredChkCount = currentChecklists.length;
@@ -7972,7 +8156,13 @@ import {
         const normalizedChks = importedRawChecklists
           .map((c, idx) => normalizeChecklistRecord(c, idx))
           .filter(Boolean);
-        saveAllChecklists(normalizedChks);
+        const chkSaveRes = saveAllChecklists(normalizedChks);
+        if (!chkSaveRes.ok) {
+          Storage.saveProjects(currentProjects);
+          saveAllChecklists(currentChecklists);
+          showToast(`Import failed while saving QA checklists: ${chkSaveRes.error}`, 'error');
+          return;
+        }
         restoredChkCount = normalizedChks.length;
       }
 
@@ -8008,7 +8198,11 @@ import {
 
       if (processedImported.length > 0) {
         const merged = [...currentProjects, ...processedImported];
-        Storage.saveProjects(merged);
+        const saveMergedRes = Storage.saveProjects(merged);
+        if (!saveMergedRes.ok) {
+          showToast(`Merge import failed: ${saveMergedRes.error}`, 'error');
+          return;
+        }
         const normalized = Storage.getProjects();
         Storage.saveProjects(normalized);
       }
@@ -8032,7 +8226,14 @@ import {
             existingChkTitles.add((copy.title || '').trim().toLowerCase());
             return copy;
           });
-        saveAllChecklists([...processedChks, ...currentChecklists]);
+        const chkSaveRes = saveAllChecklists([...processedChks, ...currentChecklists]);
+        if (!chkSaveRes.ok) {
+          if (processedImported.length > 0) {
+            Storage.saveProjects(currentProjects);
+          }
+          showToast(`Checklist merge failed: ${chkSaveRes.error}`, 'error');
+          return;
+        }
         mergedChkCount = processedChks.length;
       }
 
@@ -8057,10 +8258,20 @@ import {
     }
 
     const restoredProjects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
-    Storage.saveProjects(restoredProjects);
-    if (Array.isArray(snapshot.qaChecklists)) {
-      saveAllChecklists(snapshot.qaChecklists);
+    const saveProjRes = Storage.saveProjects(restoredProjects);
+    if (!saveProjRes.ok) {
+      showToast(`Rollback failed: ${saveProjRes.error}. Recovery snapshot preserved.`, 'error');
+      return;
     }
+
+    if (Array.isArray(snapshot.qaChecklists)) {
+      const chkSaveRes = saveAllChecklists(snapshot.qaChecklists);
+      if (!chkSaveRes.ok) {
+        showToast(`Checklist rollback failed: ${chkSaveRes.error}. Recovery snapshot preserved.`, 'error');
+        return;
+      }
+    }
+
     if (Array.isArray(snapshot.activities)) {
       Storage.saveActivities(snapshot.activities);
     }
@@ -8098,8 +8309,15 @@ import {
     const currentChecklists = loadAllChecklists().checklists;
     Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
 
-    Storage.saveProjects([]);
-    saveAllChecklists([]);
+    const pRes = Storage.saveProjects([]);
+    const cRes = saveAllChecklists([]);
+    if (!pRes.ok || !cRes.ok) {
+      Storage.saveProjects(currentProjects);
+      saveAllChecklists(currentChecklists);
+      showToast('Reset failed due to storage error. Existing workspace preserved.', 'error');
+      return;
+    }
+
     Storage.clearActivities();
     closeResetConfirmModal();
 

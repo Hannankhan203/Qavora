@@ -57,10 +57,13 @@ export function isQuotaExceededError(err) {
   return Boolean(
     err.name === 'QuotaExceededError' ||
     err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    err.name === 'QUOTA_EXCEEDED_ERR' ||
+    err.name === 'W3CException_DOM_QUOTA_EXCEEDED_ERR' ||
     err.code === 22 ||
     err.code === 1014 ||
     err.number === -2147024882 ||
-    (typeof err.message === 'string' && /quota|exceeded/i.test(err.message))
+    (typeof err.message === 'string' &&
+      /quota.*(?:exceeded|reached)|(?:exceeded|reached).*quota|storage.*full|insufficient.*(?:storage|space|quota)/i.test(err.message))
   );
 }
 
@@ -68,8 +71,10 @@ export function isSecurityError(err) {
   if (!err) return false;
   return Boolean(
     err.name === 'SecurityError' ||
+    err.name === 'SECURITY_ERR' ||
     err.code === 18 ||
-    (typeof err.message === 'string' && /security|denied|insecure|permission/i.test(err.message))
+    (typeof err.message === 'string' &&
+      /security|denied|insecure|permission|access.*denied|operation.*insecure/i.test(err.message))
   );
 }
 
@@ -86,7 +91,7 @@ export function getStorageErrorMessage(err, context = 'saving data') {
   return `Storage write failed during ${context}: Unable to save changes to browser storage.`;
 }
 
-function getStorageBackend() {
+export function getStorageBackend() {
   if (customStorageAdapter) {
     return { backend: customStorageAdapter, isFallback: false };
   }
@@ -107,6 +112,56 @@ function getStorageBackend() {
     memoryFallback = createMemoryStorage();
   }
   return { backend: memoryFallback, isFallback: true };
+}
+
+export function safeStorageWrite(key, serializedValue, context = 'saving data') {
+  const { backend, isFallback } = getStorageBackend();
+  try {
+    backend.setItem(key, serializedValue);
+    return {
+      ok: true,
+      isFallback,
+      isQuota: false,
+      isSecurity: false,
+      error: null,
+      valueOf() { return true; }
+    };
+  } catch (err) {
+    const isQuota = isQuotaExceededError(err);
+    const isSecurity = isSecurityError(err);
+    const errorMsg = getStorageErrorMessage(err, context);
+    console.error(`TestPilot: Storage write failed during ${context}`, err);
+    return {
+      ok: false,
+      isFallback,
+      isQuota,
+      isSecurity,
+      error: errorMsg,
+      valueOf() { return false; }
+    };
+  }
+}
+
+export function safeStorageRead(key) {
+  const { backend, isFallback } = getStorageBackend();
+  try {
+    const raw = backend.getItem(key);
+    return { raw, isFallback, error: null };
+  } catch (err) {
+    console.error(`TestPilot: Storage read failed for key ${key}`, err);
+    return { raw: null, isFallback, error: err };
+  }
+}
+
+export function safeStorageRemove(key) {
+  const { backend, isFallback } = getStorageBackend();
+  try {
+    backend.removeItem(key);
+    return { ok: true, isFallback };
+  } catch (err) {
+    console.error(`TestPilot: Storage removal failed for key ${key}`, err);
+    return { ok: false, isFallback, error: err };
+  }
 }
 
 // ============================================================================
@@ -574,7 +629,6 @@ export function loadAllChecklists() {
 }
 
 export function saveAllChecklists(checklistsArray) {
-  const { backend, isFallback } = getStorageBackend();
   try {
     const normalized = Array.isArray(checklistsArray)
       ? checklistsArray.map(normalizeChecklistRecord).filter(Boolean)
@@ -586,24 +640,15 @@ export function saveAllChecklists(checklistsArray) {
       checklists: normalized
     });
 
-    backend.setItem(CHECKLISTS_STORAGE_KEY, payload);
-    return {
-      ok: true,
-      isFallback,
-      isQuota: false,
-      isSecurity: false,
-      error: null,
-      valueOf() { return true; }
-    };
+    return safeStorageWrite(CHECKLISTS_STORAGE_KEY, payload, 'saving QA checklists');
   } catch (err) {
     const isQuota = isQuotaExceededError(err);
     const isSecurity = isSecurityError(err);
     const errorMsg = getStorageErrorMessage(err, 'saving QA checklists');
-
     console.error('TestPilot: Failed saving QA checklists', err);
     return {
       ok: false,
-      isFallback,
+      isFallback: false,
       isQuota,
       isSecurity,
       error: errorMsg,
@@ -631,7 +676,6 @@ export function getActiveRunnerState() {
 }
 
 export function saveActiveRunnerState(partialState) {
-  const { backend, isFallback } = getStorageBackend();
   try {
     const current = getActiveRunnerState();
     const next = {
@@ -648,16 +692,15 @@ export function saveActiveRunnerState(partialState) {
       next.activeChecklistId === current.activeChecklistId &&
       next.lastQaView === current.lastQaView
     ) {
-      return { ok: true, isFallback, isQuota: false, isSecurity: false, error: null, valueOf() { return true; } };
+      return { ok: true, isFallback: false, isQuota: false, isSecurity: false, error: null, valueOf() { return true; } };
     }
-    backend.setItem(ACTIVE_RUNNER_STORAGE_KEY, JSON.stringify(next));
-    return { ok: true, isFallback, isQuota: false, isSecurity: false, error: null, valueOf() { return true; } };
+    return safeStorageWrite(ACTIVE_RUNNER_STORAGE_KEY, JSON.stringify(next), 'saving active runner state');
   } catch (err) {
     const isQuota = isQuotaExceededError(err);
     const isSecurity = isSecurityError(err);
     return {
       ok: false,
-      isFallback,
+      isFallback: false,
       isQuota,
       isSecurity,
       error: getStorageErrorMessage(err, 'saving active runner state'),

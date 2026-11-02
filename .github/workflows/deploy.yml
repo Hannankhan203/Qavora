@@ -3,6 +3,7 @@ name: Deploy TestPilot to GitHub Pages
 on:
   push:
     branches:
+      - main
       - master
   workflow_dispatch:
 

@@ -1748,7 +1748,11 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   if (els.runnerAddPhaseBtn) {
     els.runnerAddPhaseBtn.addEventListener('click', () => {
       if (!UIState.activeChecklistId) return;
-      addPhaseToChecklist(UIState.activeChecklistId, { name: 'Additional Testing Phase' });
+      const res = addPhaseToChecklist(UIState.activeChecklistId, { name: 'Additional Testing Phase' });
+      if (!res.ok) {
+        showMsg(res.error || 'Failed to add phase.', 'error');
+        return;
+      }
       renderRunnerView();
       refreshGlobalBadgesAndBanners();
       showMsg('Added new phase to checklist.', 'success');
