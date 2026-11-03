@@ -716,9 +716,20 @@ import {
     savePreferences(prefs) {
       try {
         const current = Storage.getPreferences();
-        const merged = { ...current, ...(prefs || {}) };
-        safeStorageWrite(STORAGE_KEYS.PREFERENCES, JSON.stringify(merged), 'saving preferences');
-        return merged;
+        const candidate = { ...current, ...(prefs || {}) };
+        const clean = {
+          density: candidate.density === 'compact' ? 'compact' : 'comfortable',
+          defaultProjectSort: ['newest', 'oldest', 'name-asc', 'name-desc'].includes(candidate.defaultProjectSort)
+            ? candidate.defaultProjectSort
+            : (candidate.defaultProjectSort === 'name' ? 'name-asc' : (candidate.defaultProjectSort === 'cases' ? 'name-desc' : 'newest')),
+          defaultCasePriority: ['Critical', 'High', 'Medium', 'Low'].includes(candidate.defaultCasePriority)
+            ? candidate.defaultCasePriority
+            : 'Medium',
+          autopassSteps: typeof candidate.autopassSteps === 'boolean' ? candidate.autopassSteps : true,
+          actionToasts: typeof candidate.actionToasts === 'boolean' ? candidate.actionToasts : true
+        };
+        safeStorageWrite(STORAGE_KEYS.PREFERENCES, JSON.stringify(clean), 'saving preferences');
+        return clean;
       } catch (err) {
         console.error('Qavora: Failed to save preferences', err);
         return Storage.getPreferences();
@@ -7806,7 +7817,7 @@ import {
     }
 
     // 6. Refresh Transfer Between Devices checklist summary
-    if (qaTransferController) {
+    if (qaTransferController && typeof qaTransferController.refreshTransferWorkspace === 'function') {
       qaTransferController.refreshTransferWorkspace();
     }
 
@@ -9739,8 +9750,25 @@ import {
       switchView('data');
     } else if (view === 'settings') {
       switchView('settings');
-    } else if (view) {
+    } else if (view === 'projects') {
+      switchView('projects');
+    } else if (view === 'dashboard') {
+      switchView('dashboard');
+    } else if (view === 'checklist-generator') {
+      switchView('checklist-generator');
+    } else if (view === 'qa-runner') {
+      switchView('qa-runner');
+    } else if (view === 'reports') {
+      const projects = Storage.getProjects();
+      if (projectId && projects.some(p => p.id === projectId)) {
+        switchView('reports', projectId);
+      } else {
+        switchView('reports');
+      }
+    } else if (view && VIEW_TITLES[view]) {
       switchView(view);
+    } else {
+      showToast('Referenced workspace is not available.', 'warning');
     }
   }
 
