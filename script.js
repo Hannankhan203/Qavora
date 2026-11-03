@@ -2838,6 +2838,9 @@ import {
     showToast(`Test Plan "${name}" saved!`, 'success');
     renderTestPlansWorkspace();
     renderDashboard();
+    if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
+      renderProjectDetailsData(project);
+    }
   }
 
   // ==========================================================================
@@ -2974,6 +2977,9 @@ import {
 
     renderTestPlansWorkspace();
     renderDashboard();
+    renderMyProjects();
+    renderTestExecutionWorkspace();
+    renderReportsWorkspace();
     if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
       renderProjectDetailsData(project);
     }
@@ -2994,19 +3000,24 @@ import {
     if (targetIdx < 0 || targetIdx >= phases.length) return;
 
     // Swap orders
-    const currentOrder = phases[idx].order;
-    phases[idx].order = phases[targetIdx].order;
-    phases[targetIdx].order = currentOrder;
+    const prevIdxOrder = phases[idx].order;
+    const prevTargetOrder = phases[targetIdx].order;
+    phases[idx].order = prevTargetOrder;
+    phases[targetIdx].order = prevIdxOrder;
 
     project.testPlan.updatedAt = new Date().toISOString();
     const saveRes = Storage.saveProjects(projects);
     if (!saveRes.ok) {
-      phases[idx].order = currentOrder;
-      phases[targetIdx].order = phases[idx].order;
+      phases[idx].order = prevIdxOrder;
+      phases[targetIdx].order = prevTargetOrder;
       return;
     }
 
     renderTestPlansWorkspace();
+    renderTestExecutionWorkspace();
+    if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
+      renderProjectDetailsData(project);
+    }
   }
 
   // ==========================================================================
@@ -3202,6 +3213,9 @@ import {
 
     renderTestPlansWorkspace();
     renderDashboard();
+    renderMyProjects();
+    renderTestExecutionWorkspace();
+    renderReportsWorkspace();
 
     if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
       renderProjectDetailsData(project);
@@ -3540,6 +3554,9 @@ import {
 
     renderTestPlansWorkspace();
     renderDashboard();
+    renderMyProjects();
+    renderTestExecutionWorkspace();
+    renderReportsWorkspace();
 
     if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
       renderProjectDetailsData(project);
@@ -3845,16 +3862,17 @@ import {
         phaseHtml += `<option value="${escapeHTML(ph.id)}" ${State.execPhaseFilter === ph.id ? 'selected' : ''}>${phDisplayName}</option>`;
       });
       DOM.execFilterPhase.innerHTML = phaseHtml;
-      if (State.execPhaseFilter === 'ALL' || phases.some(ph => ph.id === State.execPhaseFilter)) {
-        DOM.execFilterPhase.value = State.execPhaseFilter;
+      if (State.execPhaseFilter !== 'ALL' && !phases.some(ph => ph.id === State.execPhaseFilter)) {
+        State.execPhaseFilter = 'ALL';
       }
+      DOM.execFilterPhase.value = State.execPhaseFilter;
     }
 
     // Populate Suite Filter Dropdown (scoped by selected phase if any)
     const relevantSuites = State.execPhaseFilter === 'ALL'
       ? suites
       : suites.filter(s => s.phaseId === State.execPhaseFilter);
-    if (State.execPhaseFilter !== 'ALL' && State.execSuiteFilter !== 'ALL' && !relevantSuites.some(s => s.id === State.execSuiteFilter)) {
+    if (State.execSuiteFilter !== 'ALL' && !relevantSuites.some(s => s.id === State.execSuiteFilter)) {
       State.execSuiteFilter = 'ALL';
     }
     if (DOM.execFilterSuite) {
@@ -3863,9 +3881,7 @@ import {
         suiteHtml += `<option value="${escapeHTML(s.id)}" ${State.execSuiteFilter === s.id ? 'selected' : ''}>${escapeHTML(s.name)}</option>`;
       });
       DOM.execFilterSuite.innerHTML = suiteHtml;
-      if (State.execSuiteFilter === 'ALL' || relevantSuites.some(s => s.id === State.execSuiteFilter)) {
-        DOM.execFilterSuite.value = State.execSuiteFilter;
-      }
+      DOM.execFilterSuite.value = State.execSuiteFilter;
     }
 
     // Populate Category Filter Dropdown
@@ -5758,7 +5774,20 @@ import {
         return;
       }
 
+      const deletedDefectIds = new Set((targetProj.defects || []).map(d => d.id));
       const updated = projects.filter(p => p.id !== targetId);
+      if (deletedDefectIds.size > 0) {
+        updated.forEach(p => {
+          (p.executions || []).forEach(ex => {
+            if (Array.isArray(ex.defectIds)) ex.defectIds = ex.defectIds.filter(id => !deletedDefectIds.has(id));
+          });
+          (p.testSuites || []).forEach(s => {
+            (s.testCases || []).forEach(tc => {
+              if (Array.isArray(tc.defectIds)) tc.defectIds = tc.defectIds.filter(id => !deletedDefectIds.has(id));
+            });
+          });
+        });
+      }
       const saveRes = Storage.saveProjects(updated);
       if (!saveRes.ok) {
         return;
@@ -6336,6 +6365,13 @@ import {
   function renderReportsWorkspace() {
     const projects = Storage.getProjects();
 
+    if (
+      !State.reportsProjectId ||
+      (State.reportsProjectId !== 'ALL' && !projects.some(p => p.id === State.reportsProjectId))
+    ) {
+      State.reportsProjectId = 'ALL';
+    }
+
     // 1. Populate Projects Selector
     if (DOM.reportsProjectSelect) {
       let optionsHtml = '<option value="ALL">All Projects (Combined)</option>';
@@ -6344,7 +6380,7 @@ import {
         optionsHtml += `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)} (${hasVer ? escapeHTML(String(p.version)) : escapeHTML(p.type)})</option>`;
       });
       DOM.reportsProjectSelect.innerHTML = optionsHtml;
-      DOM.reportsProjectSelect.value = State.reportsProjectId || 'ALL';
+      DOM.reportsProjectSelect.value = State.reportsProjectId;
     }
 
     // 2. Sync Date Filter Dropdown
@@ -9195,10 +9231,21 @@ import {
     } else if (viewName === 'projects') {
       renderMyProjects();
     } else if (viewName === 'plans') {
-      if (optArg) State.activePlanProjectId = optArg;
+      if (optArg) {
+        if (State.activePlanProjectId !== optArg) {
+          State.activeSuiteId = null;
+        }
+        State.activePlanProjectId = optArg;
+      }
       renderTestPlansWorkspace();
     } else if (viewName === 'execution') {
-      if (optArg) State.activeExecProjectId = optArg;
+      if (optArg) {
+        if (State.activeExecProjectId !== optArg) {
+          State.execPhaseFilter = 'ALL';
+          State.execSuiteFilter = 'ALL';
+        }
+        State.activeExecProjectId = optArg;
+      }
       renderTestExecutionWorkspace();
     } else if (viewName === 'defects') {
       if (optArg) State.activeDefectsProjectId = optArg;
@@ -10096,6 +10143,10 @@ import {
         );
         renderDashboard();
         renderMyProjects();
+        renderTestPlansWorkspace();
+        renderTestExecutionWorkspace();
+        renderDefectsWorkspace();
+        renderReportsWorkspace();
         renderDataWorkspace();
         showToast(
           `Promoted "${checklist.title}" to formal project "${project.name}" (${summary.phasesCount} phases, ${summary.suitesCount} suites, ${summary.casesCount} test cases initialized as Not Run).`,

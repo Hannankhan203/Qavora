@@ -240,13 +240,33 @@
             </svg>
           </button>
 
-          <button class="icon-btn notification-btn" title="Notifications" aria-label="Notifications">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-            <span class="notification-indicator"></span>
-          </button>
+          <div class="notification-wrapper" id="notification-wrapper">
+            <button id="notification-btn" class="icon-btn notification-btn" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span id="notification-indicator" class="notification-indicator" style="display: none;"></span>
+              <span id="notification-count-badge" class="notification-count-badge" style="display: none;">0</span>
+            </button>
+
+            <!-- Notifications Dropdown Panel -->
+            <div id="notification-panel" class="notification-panel" style="display: none;" role="region" aria-label="Notifications Panel">
+              <div class="notification-panel-header">
+                <div class="notification-panel-title-wrap">
+                  <h3 class="notification-panel-title">Notifications</h3>
+                  <span class="notification-unread-count" id="notification-unread-count" style="display: none;">0 new</span>
+                </div>
+                <div class="notification-panel-actions">
+                  <button type="button" id="notification-mark-all-btn" class="notification-action-link" title="Mark all as read">Mark all as read</button>
+                  <button type="button" id="notification-clear-all-btn" class="notification-action-link" title="Clear all notifications">Clear all</button>
+                </div>
+              </div>
+              <div id="notification-list" class="notification-list" role="feed">
+                <!-- Dynamically rendered notification items or empty state -->
+              </div>
+            </div>
+          </div>
 
           <div class="user-profile" title="QA Lead Account">
             <div class="avatar">QA</div>
@@ -2365,28 +2385,222 @@
 
         <!-- 6. SETTINGS VIEW -->
         <section id="view-settings" class="view-section">
-          <div class="placeholder-container">
-            <div class="placeholder-icon icon-blue">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
+          <!-- Settings Workspace Header -->
+          <div class="workspace-header-bar settings-header-bar">
+            <div>
+              <h2 class="workspace-header-title">Workspace Settings</h2>
+              <p class="workspace-header-subtitle">
+                Configure appearance themes, default testing preferences, and inspect local storage health.
+              </p>
             </div>
-            <h2 class="placeholder-title">Workspace Settings</h2>
-            <p class="placeholder-desc">
-              Manage custom testing categories, team defaults, environment presets, and export/backup your local QA database.
-            </p>
-            <div class="placeholder-tag">System Settings &amp; Data Hub</div>
-            <div class="placeholder-actions" style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
-              <button class="btn btn-secondary back-to-dashboard-btn">Back to Dashboard</button>
-              <button id="settings-jump-data-btn" class="btn btn-primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                <span>Open Data Management &amp; Backups</span>
-              </button>
+            <div class="settings-header-actions">
+              <span id="settings-save-indicator" class="settings-save-indicator" style="display: none;">Preferences saved</span>
+            </div>
+          </div>
+
+          <div class="settings-cards-grid">
+            <!-- Card 1: Appearance & Display Settings -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon icon-blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">Appearance &amp; Display</h3>
+                  <p class="settings-card-desc">Visual theme and layout density preferences</p>
+                </div>
+              </div>
+
+              <div class="settings-card-body">
+                <!-- Theme Preference Control -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-theme-select">Color Theme</label>
+                    <span class="settings-field-help">Select light or dark contrast mode for the interface</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <div class="select-wrapper">
+                      <select id="settings-theme-select" class="form-control" aria-label="Color Theme">
+                        <option value="dark">Dark Theme (Default)</option>
+                        <option value="light">Light Theme</option>
+                      </select>
+                      <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Table Row Density -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-density-select">Table &amp; List Density</label>
+                    <span class="settings-field-help">Controls vertical spacing in test execution and test case tables</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <div class="select-wrapper">
+                      <select id="settings-density-select" class="form-control" aria-label="Table and List Density">
+                        <option value="comfortable">Comfortable Spacing</option>
+                        <option value="compact">Compact Density</option>
+                      </select>
+                      <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: QA Workflow & Execution Preferences -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon icon-purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">QA Workflow &amp; Defaults</h3>
+                  <p class="settings-card-desc">Default selections for test creation and project views</p>
+                </div>
+              </div>
+
+              <div class="settings-card-body">
+                <!-- Default Project Sort -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-project-sort-select">Default Project Sorting</label>
+                    <span class="settings-field-help">Initial sort order when opening My Projects</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <div class="select-wrapper">
+                      <select id="settings-project-sort-select" class="form-control" aria-label="Default Project Sorting">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="name">Alphabetical (A-Z)</option>
+                        <option value="cases">Most Test Cases</option>
+                      </select>
+                      <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Default Test Case Priority -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-case-priority-select">Default Test Case Priority</label>
+                    <span class="settings-field-help">Pre-selected priority when creating new test cases</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <div class="select-wrapper">
+                      <select id="settings-case-priority-select" class="form-control" aria-label="Default Test Case Priority">
+                        <option value="Medium">Medium (Recommended)</option>
+                        <option value="High">High</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Low">Low</option>
+                      </select>
+                      <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Auto-pass Steps on Case Pass Toggle -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-autopass-steps-toggle">Auto-Pass Steps on Case Pass</label>
+                    <span class="settings-field-help">Automatically marks all steps as Passed when passing a test case in execution modal</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settings-autopass-steps-toggle" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- In-App Action Toasts Toggle -->
+                <div class="settings-field-group">
+                  <div class="settings-field-info">
+                    <label class="settings-field-label" for="settings-action-toasts-toggle">Action Confirmation Banners</label>
+                    <span class="settings-field-help">Display in-app toast feedback after creating, updating, or deleting records</span>
+                  </div>
+                  <div class="settings-field-control">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settings-action-toasts-toggle" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 3: Storage & Data Information -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon icon-green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">Storage &amp; Data Health</h3>
+                  <p class="settings-card-desc">Overview of client-side browser storage and quick backup access</p>
+                </div>
+              </div>
+
+              <div class="settings-card-body">
+                <div class="settings-storage-stats-row">
+                  <div class="settings-mini-stat">
+                    <span class="settings-mini-stat-label">Storage Usage</span>
+                    <span class="settings-mini-stat-value" id="settings-storage-used">0.0 KB</span>
+                    <span class="settings-mini-stat-sub" id="settings-storage-percent">&lt; 1% of ~5 MB</span>
+                  </div>
+                  <div class="settings-mini-stat">
+                    <span class="settings-mini-stat-label">Projects</span>
+                    <span class="settings-mini-stat-value" id="settings-count-projects">0</span>
+                    <span class="settings-mini-stat-sub">Formal workspaces</span>
+                  </div>
+                  <div class="settings-mini-stat">
+                    <span class="settings-mini-stat-label">Checklists</span>
+                    <span class="settings-mini-stat-value" id="settings-count-checklists">0</span>
+                    <span class="settings-mini-stat-sub">Saved checklists</span>
+                  </div>
+                  <div class="settings-mini-stat">
+                    <span class="settings-mini-stat-label">Test Cases</span>
+                    <span class="settings-mini-stat-value" id="settings-count-cases">0</span>
+                    <span class="settings-mini-stat-sub">Across all projects</span>
+                  </div>
+                </div>
+
+                <div class="settings-storage-actions">
+                  <button type="button" id="settings-jump-data-btn" class="btn btn-secondary btn-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Open Data Management</span>
+                  </button>
+                  <button type="button" id="settings-quick-backup-btn" class="btn btn-primary btn-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Export Workspace Backup</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
