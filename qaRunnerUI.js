@@ -31,7 +31,10 @@ import {
   addCategoryToChecklistPhase,
   updateTestInChecklist,
   addTestToChecklistPhase,
-  removeTestFromChecklist
+  removeTestFromChecklist,
+  getChecklistPromotionPreview,
+  findPromotedProjectForChecklist,
+  promoteChecklistToProject
 } from './qaChecklistStore.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -91,6 +94,12 @@ const ICONS = {
     createSvgIcon([
       { tag: 'path', attrs: { d: 'M9 11l3 3L22 4' } },
       { tag: 'path', attrs: { d: 'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' } }
+    ]),
+  promote: () =>
+    createSvgIcon([
+      { tag: 'path', attrs: { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' } },
+      { tag: 'line', attrs: { x1: '12', y1: '11', x2: '12', y2: '17' } },
+      { tag: 'polyline', attrs: { points: '9 14 12 11 15 14' } }
     ])
 };
 
@@ -114,7 +123,12 @@ function clearElement(el) {
   }
 }
 
-export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
+export function initQARunnerAndChecklists({
+  navigateTo,
+  notify,
+  onChecklistPromoted,
+  onOpenPromotedProject
+} = {}) {
   const els = {
     // Sidebar & Quick Resume Badges
     navChecklistsCount: document.getElementById('nav-checklists-count'),
@@ -166,9 +180,26 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     // Runner Toolbar Controls
     runnerExpandAllBtn: document.getElementById('btn-runner-expand-all'),
     runnerCollapseAllBtn: document.getElementById('btn-runner-collapse-all'),
+    runnerPromoteBtn: document.getElementById('btn-runner-promote-project'),
+    runnerPromoteBtnText: document.getElementById('runner-promote-btn-text'),
     runnerToggleEditModeBtn: document.getElementById('btn-runner-toggle-edit'),
     runnerAddPhaseBtn: document.getElementById('btn-runner-add-phase'),
     runnerPhasesContainer: document.getElementById('runner-phases-container'),
+
+    // Promote Checklist to Project Modal (QAV-ISS-001)
+    promoteModal: document.getElementById('qa-checklist-promote-modal'),
+    promoteModalClose: document.getElementById('qa-chk-promote-close'),
+    promoteModalCancel: document.getElementById('qa-chk-promote-cancel'),
+    promoteModalConfirm: document.getElementById('qa-chk-promote-confirm'),
+    promoteModalConfirmText: document.getElementById('qa-chk-promote-confirm-text'),
+    promoteModalSourceTitle: document.getElementById('qa-chk-promote-source-title'),
+    promoteModalProjectName: document.getElementById('qa-chk-promote-project-name'),
+    promoteModalProjectType: document.getElementById('qa-chk-promote-project-type'),
+    promoteModalPhasesCnt: document.getElementById('qa-chk-promote-phases-cnt'),
+    promoteModalSuitesCnt: document.getElementById('qa-chk-promote-suites-cnt'),
+    promoteModalCasesCnt: document.getElementById('qa-chk-promote-cases-cnt'),
+    promoteModalError: document.getElementById('qa-chk-promote-error'),
+    promoteModalErrorText: document.getElementById('qa-chk-promote-error-text'),
 
     // Delete Checklist Confirmation Modal
     deleteModal: document.getElementById('qa-checklist-delete-modal'),
@@ -188,6 +219,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     renamingCardId: null,
     pendingDeleteChecklistId: null,
     pendingDelete: null, // { type: 'checklist' | 'phase' | 'test', checklistId, phaseId, testId, title }
+    pendingPromoteChecklistId: null,
     pendingAddTestTarget: null, // { phaseId, sectionId }
     listSearchQuery: '',
     lastFocusedElement: null
@@ -454,7 +486,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       barTrack.appendChild(barFill);
       card.appendChild(barTrack);
 
-      // Card Actions: Open Checklist | Rename Checklist | Delete Checklist
+      // Card Actions: Open Checklist | Promote to Project / Open Project | Rename Checklist | Delete Checklist
       const actionsRow = document.createElement('div');
       actionsRow.className = 'qa-mychk-actions';
 
@@ -467,6 +499,30 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       openBtn.appendChild(openTxt);
       openBtn.addEventListener('click', () => {
         openChecklistInRunner(chk.id);
+      });
+
+      const linkedProject = findPromotedProjectForChecklist(chk);
+      const promoteBtn = document.createElement('button');
+      promoteBtn.type = 'button';
+      promoteBtn.className = 'btn btn-secondary btn-sm';
+      promoteBtn.setAttribute('data-action', linkedProject ? 'open-promoted-project' : 'promote-checklist');
+      promoteBtn.setAttribute('data-checklist-id', chk.id);
+      promoteBtn.appendChild(linkedProject ? ICONS.folder() : ICONS.promote());
+      const promoteTxt = document.createElement('span');
+      promoteTxt.textContent = linkedProject ? 'Open Project' : 'Promote to Project';
+      promoteBtn.appendChild(promoteTxt);
+      promoteBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const currentLinked = findPromotedProjectForChecklist(chk);
+        if (currentLinked) {
+          if (typeof onOpenPromotedProject === 'function') {
+            onOpenPromotedProject(currentLinked.id);
+          } else {
+            goView('plans');
+          }
+          return;
+        }
+        openPromoteChecklistModal(chk);
       });
 
       const renameBtn = document.createElement('button');
@@ -494,6 +550,7 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
       });
 
       actionsRow.appendChild(openBtn);
+      actionsRow.appendChild(promoteBtn);
       actionsRow.appendChild(renameBtn);
       actionsRow.appendChild(deleteBtn);
       card.appendChild(actionsRow);
@@ -727,6 +784,141 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   }
 
   // ==========================================================================
+  // Promote QA Checklist to Formal Project Modal (QAV-ISS-001)
+  // ==========================================================================
+  function openPromoteChecklistModal(checklist) {
+    if (!checklist) return;
+
+    const alreadyLinked = findPromotedProjectForChecklist(checklist);
+    if (alreadyLinked) {
+      showMsg(`Checklist "${checklist.title}" is already promoted to project "${alreadyLinked.name}".`, 'info');
+      if (typeof onOpenPromotedProject === 'function') {
+        onOpenPromotedProject(alreadyLinked.id);
+      }
+      return;
+    }
+
+    UIState.lastFocusedElement = document.activeElement;
+    UIState.pendingPromoteChecklistId = checklist.id;
+
+    const preview = getChecklistPromotionPreview(checklist);
+
+    if (els.promoteModalSourceTitle) {
+      els.promoteModalSourceTitle.textContent = `"${checklist.title}"`;
+    }
+    if (els.promoteModalProjectName) {
+      els.promoteModalProjectName.value = checklist.title;
+    }
+    if (els.promoteModalProjectType) {
+      els.promoteModalProjectType.value = 'Web Application';
+    }
+    if (els.promoteModalPhasesCnt) {
+      els.promoteModalPhasesCnt.textContent = String(preview.phasesCount);
+    }
+    if (els.promoteModalSuitesCnt) {
+      els.promoteModalSuitesCnt.textContent = String(preview.suitesCount);
+    }
+    if (els.promoteModalCasesCnt) {
+      els.promoteModalCasesCnt.textContent = String(preview.casesCount);
+    }
+    if (els.promoteModalError) {
+      els.promoteModalError.style.display = 'none';
+    }
+
+    if (els.promoteModal) {
+      els.promoteModal.classList.add('open');
+      els.promoteModal.setAttribute('aria-hidden', 'false');
+      if (els.promoteModalProjectName) {
+        setTimeout(() => els.promoteModalProjectName.focus(), 0);
+      }
+    }
+  }
+
+  function closePromoteChecklistModal() {
+    UIState.pendingPromoteChecklistId = null;
+    if (els.promoteModal) {
+      els.promoteModal.classList.remove('open');
+      els.promoteModal.setAttribute('aria-hidden', 'true');
+    }
+    if (els.promoteModalError) {
+      els.promoteModalError.style.display = 'none';
+    }
+    const prevFocus = UIState.lastFocusedElement;
+    UIState.lastFocusedElement = null;
+    if (prevFocus && typeof prevFocus.focus === 'function' && document.contains(prevFocus)) {
+      prevFocus.focus();
+    }
+  }
+
+  function confirmPromoteChecklist() {
+    const targetId = UIState.pendingPromoteChecklistId;
+    if (!targetId) return;
+
+    const projectName = els.promoteModalProjectName ? els.promoteModalProjectName.value.trim() : '';
+    const projectType = els.promoteModalProjectType ? els.promoteModalProjectType.value : 'Web Application';
+
+    if (!projectName) {
+      if (els.promoteModalError && els.promoteModalErrorText) {
+        els.promoteModalErrorText.textContent = 'Please provide a formal project name.';
+        els.promoteModalError.style.display = 'flex';
+      } else {
+        showMsg('Please provide a formal project name.', 'warning');
+      }
+      if (els.promoteModalProjectName) els.promoteModalProjectName.focus();
+      return;
+    }
+
+    if (els.promoteModalConfirm) {
+      els.promoteModalConfirm.disabled = true;
+    }
+
+    try {
+      const res = promoteChecklistToProject(targetId, {
+        projectName,
+        projectType
+      });
+
+      if (!res.ok) {
+        if (res.alreadyPromoted && res.project) {
+          closePromoteChecklistModal();
+          renderMyChecklistsView();
+          renderRunnerView();
+          showMsg(res.error || 'Checklist has already been promoted.', 'info');
+          if (typeof onOpenPromotedProject === 'function') {
+            onOpenPromotedProject(res.project.id);
+          }
+          return;
+        }
+
+        if (els.promoteModalError && els.promoteModalErrorText) {
+          els.promoteModalErrorText.textContent = res.error || 'Failed to promote checklist.';
+          els.promoteModalError.style.display = 'flex';
+        }
+        showMsg(res.error || 'Failed to promote checklist.', 'error');
+        return;
+      }
+
+      closePromoteChecklistModal();
+      refreshGlobalBadgesAndBanners();
+      renderMyChecklistsView();
+      renderRunnerView();
+
+      if (typeof onChecklistPromoted === 'function') {
+        onChecklistPromoted(res);
+      } else {
+        showMsg(
+          `Promoted "${res.checklist.title}" to project "${res.project.name}" (${res.summary.phasesCount} phases, ${res.summary.suitesCount} suites, ${res.summary.casesCount} test cases — all initialized as Not Run).`,
+          'success'
+        );
+      }
+    } finally {
+      if (els.promoteModalConfirm) {
+        els.promoteModalConfirm.disabled = false;
+      }
+    }
+  }
+
+  // ==========================================================================
   // Manual QA Test Runner View Rendering & Instant Checkbox Updates
   // ==========================================================================
   function syncChecklistSwitcherDropdown(checklists, activeId) {
@@ -788,6 +980,11 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     if (els.runnerStatPercent) els.runnerStatPercent.textContent = `${overall.percentage}%`;
     if (els.runnerOverallBar) {
       els.runnerOverallBar.style.width = `${overall.percentage}%`;
+    }
+
+    if (els.runnerPromoteBtnText) {
+      const linkedProj = findPromotedProjectForChecklist(checklist);
+      els.runnerPromoteBtnText.textContent = linkedProj ? 'Open Promoted Project' : 'Promote to Project';
     }
   }
 
@@ -1775,6 +1972,42 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
     });
   }
 
+  if (els.runnerPromoteBtn) {
+    els.runnerPromoteBtn.addEventListener('click', () => {
+      if (!UIState.activeChecklistId) return;
+      const chk = getChecklistById(UIState.activeChecklistId);
+      if (!chk) return;
+      const linkedProj = findPromotedProjectForChecklist(chk);
+      if (linkedProj) {
+        if (typeof onOpenPromotedProject === 'function') {
+          onOpenPromotedProject(linkedProj.id);
+        } else {
+          goView('plans');
+        }
+        return;
+      }
+      openPromoteChecklistModal(chk);
+    });
+  }
+
+  // Promote Confirmation Modal Events
+  if (els.promoteModalClose) els.promoteModalClose.addEventListener('click', closePromoteChecklistModal);
+  if (els.promoteModalCancel) els.promoteModalCancel.addEventListener('click', closePromoteChecklistModal);
+  if (els.promoteModalConfirm) els.promoteModalConfirm.addEventListener('click', confirmPromoteChecklist);
+  if (els.promoteModal) {
+    els.promoteModal.addEventListener('click', e => {
+      if (e.target === els.promoteModal) closePromoteChecklistModal();
+    });
+  }
+  if (els.promoteModalProjectName) {
+    els.promoteModalProjectName.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmPromoteChecklist();
+      }
+    });
+  }
+
   // Delete Confirmation Modal Events
   if (els.deleteModalClose) els.deleteModalClose.addEventListener('click', closeDeleteChecklistModal);
   if (els.deleteModalCancel) els.deleteModalCancel.addEventListener('click', closeDeleteChecklistModal);
@@ -1786,6 +2019,13 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
   }
 
   document.addEventListener('keydown', e => {
+    if (els.promoteModal && els.promoteModal.classList.contains('open')) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closePromoteChecklistModal();
+      }
+      return;
+    }
     if (!els.deleteModal || !els.deleteModal.classList.contains('open')) return;
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -1857,9 +2097,28 @@ export function initQARunnerAndChecklists({ navigateTo, notify } = {}) {
 
   return {
     openChecklistInRunner,
+    openPromoteChecklistModal,
     renderMyChecklistsView,
     renderRunnerView,
     refreshGlobalBadgesAndBanners,
+    syncFromStorage() {
+      const st = getActiveRunnerState();
+      const { checklists } = loadAllChecklists();
+      if (st.activeChecklistId && checklists.some(c => c.id === st.activeChecklistId)) {
+        UIState.activeChecklistId = st.activeChecklistId;
+      } else {
+        UIState.activeChecklistId = checklists.length > 0 ? checklists[0].id : null;
+      }
+      refreshGlobalBadgesAndBanners();
+      const myChkSection = document.getElementById('view-my-checklists');
+      const runnerSection = document.getElementById('view-qa-runner');
+      if (myChkSection && myChkSection.classList.contains('active')) {
+        renderMyChecklistsView();
+      }
+      if (runnerSection && runnerSection.classList.contains('active')) {
+        renderRunnerView();
+      }
+    },
     recordLastQaView(viewName) {
       if (['checklist-generator', 'my-checklists', 'qa-runner'].includes(viewName)) {
         saveActiveRunnerState({ lastQaView: viewName });

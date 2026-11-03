@@ -19,6 +19,11 @@ import {
   loadAllChecklists,
   saveAllChecklists,
   normalizeChecklistRecord,
+  getActiveRunnerState,
+  normalizeActiveRunnerState,
+  replaceActiveRunnerState,
+  calculateChecklistProgress,
+  calculateQavoraStorageFootprint,
   generateStableId,
   comparePhaseNumbers,
   isQuotaExceededError,
@@ -481,6 +486,9 @@ import {
             status: VALID_STATUSES.includes(p.status) ? p.status : 'Active',
             version: typeof p.version === 'string' ? p.version.trim() : (typeof p.version === 'number' ? String(p.version) : ''),
             description: typeof p.description === 'string' ? p.description.trim() : '',
+            sourceChecklistId: typeof p.sourceChecklistId === 'string' && p.sourceChecklistId.trim() ? p.sourceChecklistId.trim() : null,
+            promotedFromChecklistTitle: typeof p.promotedFromChecklistTitle === 'string' && p.promotedFromChecklistTitle.trim() ? p.promotedFromChecklistTitle.trim() : null,
+            promotedAt: typeof p.promotedAt === 'string' && p.promotedAt.trim() ? p.promotedAt.trim() : null,
             createdAt: createdAt,
             updatedAt: updatedAt,
             testCaseCount: totalCases,
@@ -605,16 +613,21 @@ import {
       }
     },
 
-    saveRollbackSnapshot(projects, activities, qaChecklists = null) {
+    saveRollbackSnapshot(projects, activities, qaChecklists = null, qaActiveRunner = undefined) {
       try {
         const checklistsToSave = Array.isArray(qaChecklists)
           ? qaChecklists
           : loadAllChecklists().checklists;
+        const runnerStateToSave = normalizeActiveRunnerState(
+          qaActiveRunner !== undefined ? qaActiveRunner : getActiveRunnerState(),
+          checklistsToSave
+        );
         sessionStorage.setItem(ROLLBACK_KEY, JSON.stringify({
           timestamp: new Date().toISOString(),
           projects: projects,
           activities: activities,
-          qaChecklists: checklistsToSave
+          qaChecklists: checklistsToSave,
+          qaActiveRunner: runnerStateToSave
         }));
       } catch (err) {
         console.warn('Qavora: Unable to write rollback to sessionStorage', err);
@@ -1142,6 +1155,8 @@ import {
     dataStatCases: document.getElementById('data-stat-cases'),
     dataStatExecs: document.getElementById('data-stat-execs'),
     dataStatDefects: document.getElementById('data-stat-defects'),
+    dataStatChecklists: document.getElementById('data-stat-checklists'),
+    dataStatChecklistsSub: document.getElementById('data-stat-checklists-sub'),
     dataStatStorageSize: document.getElementById('data-stat-storage-size'),
     dataStatStoragePercent: document.getElementById('data-stat-storage-percent'),
     dataStatStorageBar: document.getElementById('data-stat-storage-bar'),
@@ -1160,6 +1175,7 @@ import {
     btnExportCasesCsv: document.getElementById('btn-export-cases-csv'),
     btnExportExecsCsv: document.getElementById('btn-export-execs-csv'),
     btnExportDefectsCsv: document.getElementById('btn-export-defects-csv'),
+    btnExportChecklistsCsv: document.getElementById('btn-export-checklists-csv'),
 
     // Import Card Controls
     importDropzone: document.getElementById('import-dropzone'),
@@ -2505,7 +2521,8 @@ import {
 
     // Sync filter controls with State
     if (DOM.caseSearchInput) DOM.caseSearchInput.value = State.caseSearchQuery;
-    if (DOM.casePriorityFilter) DOM.casePriorityFilter.value = State.casePriorityFilter;
+    if (DOM.caseFilterPriority) DOM.caseFilterPriority.value = State.casePriorityFilter;
+    if (DOM.caseFilterCategory) DOM.caseFilterCategory.value = State.caseCategoryFilter;
     if (DOM.caseSortBy) DOM.caseSortBy.value = State.caseSortBy;
 
     const hasFilters = Boolean(
@@ -2752,8 +2769,8 @@ import {
     State.caseSortBy = 'newest';
 
     if (DOM.caseSearchInput) DOM.caseSearchInput.value = '';
-    if (DOM.casePriorityFilter) DOM.casePriorityFilter.value = 'ALL';
-    if (DOM.caseCategoryFilter) DOM.caseCategoryFilter.value = 'ALL';
+    if (DOM.caseFilterPriority) DOM.caseFilterPriority.value = 'ALL';
+    if (DOM.caseFilterCategory) DOM.caseFilterCategory.value = 'ALL';
     if (DOM.caseSortBy) DOM.caseSortBy.value = 'newest';
 
     renderTestPlansWorkspace();
@@ -3597,16 +3614,70 @@ import {
   // ==========================================================================
   // Prompt 3: Modals — Test Case Inspection View
   // ==========================================================================
+  function resolveProjectCaseContext(projectId, caseId, optProjects = null) {
+    if (!projectId || projectId === 'ALL' || caseId === undefined || caseId === null) {
+      return null;
+    }
+    const normalizedCaseId = String(caseId).trim();
+    if (!normalizedCaseId) return null;
+
+    const projects = Array.isArray(optProjects) ? optProjects : Storage.getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return null;
+
+    for (const suite of (project.testSuites || [])) {
+      const tc = (suite.testCases || []).find(c => c.id === normalizedCaseId);
+      if (tc) {
+        return { project, suite, testCase: tc };
+      }
+    }
+    return null;
+  }
+
   function openTestCaseViewModal(projectId, suiteId, caseId) {
+    if (!projectId || projectId === 'ALL') {
+      showToast('Linked test case could not be opened: invalid project reference.', 'warning');
+      return false;
+    }
+
     const projects = Storage.getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project) return;
+    if (!project) {
+      showToast('Project for linked test case could not be found.', 'warning');
+      return false;
+    }
 
-    const suite = (project.testSuites || []).find(s => s.id === suiteId);
-    if (!suite) return;
+    let suite = null;
+    let tc = null;
 
-    const tc = (suite.testCases || []).find(c => c.id === caseId);
-    if (!tc) return;
+    if (caseId !== undefined && caseId !== null && String(caseId).trim() !== '') {
+      const targetCaseId = String(caseId).trim();
+      if (suiteId) {
+        suite = (project.testSuites || []).find(s => s.id === suiteId) || null;
+        if (suite) {
+          tc = (suite.testCases || []).find(c => c.id === targetCaseId) || null;
+        }
+      }
+      if (!tc) {
+        const resolved = resolveProjectCaseContext(project.id, targetCaseId, projects);
+        if (resolved) {
+          suite = resolved.suite;
+          tc = resolved.testCase;
+        }
+      }
+    } else if (suiteId !== undefined && suiteId !== null && String(suiteId).trim() !== '') {
+      // Backward-compatible 2-argument call: openTestCaseViewModal(projectId, caseId)
+      const resolved = resolveProjectCaseContext(project.id, suiteId, projects);
+      if (resolved) {
+        suite = resolved.suite;
+        tc = resolved.testCase;
+      }
+    }
+
+    if (!suite || !tc) {
+      showToast('Linked test case could not be found or has been deleted.', 'warning');
+      return false;
+    }
 
     if (DOM.viewCaseId) DOM.viewCaseId.textContent = tc.id;
     if (DOM.viewCaseTitle) DOM.viewCaseTitle.textContent = tc.title;
@@ -3683,6 +3754,7 @@ import {
     if (DOM.viewCaseEditBtn) {
       DOM.viewCaseEditBtn.onclick = () => {
         closeTestCaseViewModal();
+        State.activePlanProjectId = project.id;
         openTestCaseModal(tc.id, suite.id);
       };
     }
@@ -3695,9 +3767,13 @@ import {
     }
 
     if (DOM.testcaseViewModal) {
+      DOM.testcaseViewModal.setAttribute('data-project-id', project.id);
+      DOM.testcaseViewModal.setAttribute('data-suite-id', suite.id);
+      DOM.testcaseViewModal.setAttribute('data-case-id', tc.id);
       DOM.testcaseViewModal.classList.add('open');
       DOM.testcaseViewModal.setAttribute('aria-hidden', 'false');
     }
+    return true;
   }
 
   function closeTestCaseViewModal() {
@@ -3769,18 +3845,27 @@ import {
         phaseHtml += `<option value="${escapeHTML(ph.id)}" ${State.execPhaseFilter === ph.id ? 'selected' : ''}>${phDisplayName}</option>`;
       });
       DOM.execFilterPhase.innerHTML = phaseHtml;
+      if (State.execPhaseFilter === 'ALL' || phases.some(ph => ph.id === State.execPhaseFilter)) {
+        DOM.execFilterPhase.value = State.execPhaseFilter;
+      }
     }
 
     // Populate Suite Filter Dropdown (scoped by selected phase if any)
+    const relevantSuites = State.execPhaseFilter === 'ALL'
+      ? suites
+      : suites.filter(s => s.phaseId === State.execPhaseFilter);
+    if (State.execPhaseFilter !== 'ALL' && State.execSuiteFilter !== 'ALL' && !relevantSuites.some(s => s.id === State.execSuiteFilter)) {
+      State.execSuiteFilter = 'ALL';
+    }
     if (DOM.execFilterSuite) {
       let suiteHtml = '<option value="ALL">All Suites</option>';
-      const relevantSuites = State.execPhaseFilter === 'ALL'
-        ? suites
-        : suites.filter(s => s.phaseId === State.execPhaseFilter);
       relevantSuites.forEach(s => {
         suiteHtml += `<option value="${escapeHTML(s.id)}" ${State.execSuiteFilter === s.id ? 'selected' : ''}>${escapeHTML(s.name)}</option>`;
       });
       DOM.execFilterSuite.innerHTML = suiteHtml;
+      if (State.execSuiteFilter === 'ALL' || relevantSuites.some(s => s.id === State.execSuiteFilter)) {
+        DOM.execFilterSuite.value = State.execSuiteFilter;
+      }
     }
 
     // Populate Category Filter Dropdown
@@ -3790,11 +3875,23 @@ import {
         if (s.category) catSet.add(s.category);
         (s.testCases || []).forEach(tc => { if (tc.category) catSet.add(tc.category); });
       });
+      if (State.execCategoryFilter && State.execCategoryFilter !== 'ALL') {
+        catSet.add(State.execCategoryFilter);
+      }
       let catHtml = '<option value="ALL">All Categories</option>';
       Array.from(catSet).sort().forEach(cat => {
         catHtml += `<option value="${escapeHTML(cat)}" ${State.execCategoryFilter === cat ? 'selected' : ''}>${escapeHTML(cat)}</option>`;
       });
       DOM.execFilterCategory.innerHTML = catHtml;
+      DOM.execFilterCategory.value = State.execCategoryFilter || 'ALL';
+    }
+
+    // Sync Status, Priority, Sort, and Search controls with State
+    if (DOM.execFilterStatus) DOM.execFilterStatus.value = State.execStatusFilter || 'ALL';
+    if (DOM.execFilterPriority) DOM.execFilterPriority.value = State.execPriorityFilter || 'ALL';
+    if (DOM.execSortBy) DOM.execSortBy.value = State.execSortBy || 'id-asc';
+    if (DOM.execSearchInput && DOM.execSearchInput.value !== State.execSearchQuery) {
+      DOM.execSearchInput.value = State.execSearchQuery || '';
     }
 
     // Compute and Render Execution KPI Metrics (Strict Formulas)
@@ -3842,7 +3939,8 @@ import {
       State.execSuiteFilter !== 'ALL' ||
       State.execStatusFilter !== 'ALL' ||
       State.execPriorityFilter !== 'ALL' ||
-      State.execCategoryFilter !== 'ALL'
+      State.execCategoryFilter !== 'ALL' ||
+      State.execSortBy !== 'id-asc'
     );
 
     if (DOM.execClearFiltersBtn) DOM.execClearFiltersBtn.style.display = hasActiveFilters ? 'inline-flex' : 'none';
@@ -4183,7 +4281,7 @@ import {
   }
 
   function renderExecutionStepsList() {
-    if (!DOM.execStepsContainer || !State.modalExecContext) return;
+    if (!DOM.execStepsContainer || !State.modalExecContext || !Array.isArray(State.modalExecContext.steps)) return;
 
     const steps = State.modalExecContext.steps;
     const total = steps.length;
@@ -4277,9 +4375,9 @@ import {
 
     // Attach step action button events
     DOM.execStepsContainer.querySelectorAll('.btn-pass').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const i = parseInt(btn.getAttribute('data-step-index'), 10);
-        if (State.modalExecContext.steps[i]) {
+        if (State.modalExecContext && Array.isArray(State.modalExecContext.steps) && State.modalExecContext.steps[i]) {
           State.modalExecContext.steps[i].status = 'completed';
           renderExecutionStepsList();
         }
@@ -4287,9 +4385,9 @@ import {
     });
 
     DOM.execStepsContainer.querySelectorAll('.btn-fail').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const i = parseInt(btn.getAttribute('data-step-index'), 10);
-        if (State.modalExecContext.steps[i]) {
+        if (State.modalExecContext && Array.isArray(State.modalExecContext.steps) && State.modalExecContext.steps[i]) {
           State.modalExecContext.steps[i].status = 'failed';
           renderExecutionStepsList();
 
@@ -4303,9 +4401,9 @@ import {
     });
 
     DOM.execStepsContainer.querySelectorAll('.btn-reset').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const i = parseInt(btn.getAttribute('data-step-index'), 10);
-        if (State.modalExecContext.steps[i]) {
+        if (State.modalExecContext && Array.isArray(State.modalExecContext.steps) && State.modalExecContext.steps[i]) {
           State.modalExecContext.steps[i].status = 'untested';
           renderExecutionStepsList();
         }
@@ -4315,7 +4413,7 @@ import {
     DOM.execStepsContainer.querySelectorAll('.exec-step-note-input').forEach(input => {
       input.addEventListener('input', (e) => {
         const i = parseInt(input.getAttribute('data-step-index'), 10);
-        if (State.modalExecContext.steps[i]) {
+        if (State.modalExecContext && Array.isArray(State.modalExecContext.steps) && State.modalExecContext.steps[i]) {
           State.modalExecContext.steps[i].note = e.target.value;
         }
       });
@@ -4718,6 +4816,14 @@ import {
   function renderDefectsWorkspace() {
     const projects = Storage.getProjects();
 
+    // Ensure activeDefectsProjectId is valid ('ALL' or an existing project ID)
+    if (
+      !State.activeDefectsProjectId ||
+      (State.activeDefectsProjectId !== 'ALL' && !projects.some(p => p.id === State.activeDefectsProjectId))
+    ) {
+      State.activeDefectsProjectId = 'ALL';
+    }
+
     // Populate Project Filter Dropdown
     if (DOM.defectsProjectSelect) {
       let optHtml = '<option value="ALL">All Projects (Combined)</option>';
@@ -4725,7 +4831,14 @@ import {
         optHtml += `<option value="${escapeHTML(p.id)}" ${State.activeDefectsProjectId === p.id ? 'selected' : ''}>${escapeHTML(p.name)} (${p.totalDefects ?? 0} defects)</option>`;
       });
       DOM.defectsProjectSelect.innerHTML = optHtml;
+      DOM.defectsProjectSelect.value = State.activeDefectsProjectId;
     }
+
+    // Synchronize filter & sort controls with State (QAV-ISS-004)
+    if (DOM.defectsSearchInput) DOM.defectsSearchInput.value = State.defectSearchQuery || '';
+    if (DOM.defectsFilterSeverity) DOM.defectsFilterSeverity.value = State.defectSeverityFilter || 'ALL';
+    if (DOM.defectsFilterStatus) DOM.defectsFilterStatus.value = State.defectStatusFilter || 'ALL';
+    if (DOM.defectsSortBy) DOM.defectsSortBy.value = State.defectSortBy || 'newest';
 
     // Collect all defects according to active project scope
     const allDefects = [];
@@ -4772,7 +4885,8 @@ import {
         const idMatch = (d.id || '').toLowerCase().includes(q);
         const titleMatch = (d.title || '').toLowerCase().includes(q);
         const descMatch = (d.description || '').toLowerCase().includes(q);
-        if (!idMatch && !titleMatch && !descMatch) return false;
+        const caseMatch = (d.testCaseId !== undefined && d.testCaseId !== null && String(d.testCaseId).toLowerCase().includes(q));
+        if (!idMatch && !titleMatch && !descMatch && !caseMatch) return false;
       }
       if (State.defectSeverityFilter !== 'ALL' && classifyDefectPriority(d) !== State.defectSeverityFilter) return false;
       if (State.defectStatusFilter !== 'ALL' && d.status !== State.defectStatusFilter) return false;
@@ -4788,8 +4902,14 @@ import {
           const map = { Critical: 4, High: 3, Medium: 2, Low: 1 };
           return (map[classifyDefectPriority(b)] || 0) - (map[classifyDefectPriority(a)] || 0);
         }
+        case 'severity-asc': {
+          const map = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+          return (map[classifyDefectPriority(a)] || 0) - (map[classifyDefectPriority(b)] || 0);
+        }
         case 'id-desc':
           return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
+        case 'id-asc':
+          return (a.id || '').localeCompare(b.id || '', undefined, { numeric: true });
         case 'newest':
         default:
           return new Date(b.createdAt) - new Date(a.createdAt);
@@ -4830,7 +4950,7 @@ import {
       `;
 
       const btn = DOM.defectsTableContainer.querySelector('.btn-empty-create-defect');
-      if (btn) btn.addEventListener('click', () => openDefectModal(projects[0]?.id || null, null));
+      if (btn) btn.addEventListener('click', () => openDefectModal(State.activeDefectsProjectId, null));
       return;
     }
 
@@ -4880,8 +5000,12 @@ import {
       const statusClass = getDefectStatusBadgeClass(df.status);
 
       const hasLinkedTest = df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '';
+      const resolvedLinkedCtx = hasLinkedTest
+        ? resolveProjectCaseContext(df.projectId, df.testCaseId, projects)
+        : null;
+      const linkedSuiteIdAttr = resolvedLinkedCtx ? ` data-suite-id="${escapeHTML(resolvedLinkedCtx.suite.id)}"` : '';
       const linkedTestHtml = hasLinkedTest
-        ? `<span class="case-id-tag btn-inspect-linked-test" data-project-id="${escapeHTML(df.projectId)}" data-case-id="${escapeHTML(String(df.testCaseId))}" style="cursor: pointer;" title="Inspect linked test case ${escapeHTML(String(df.testCaseId))}">${escapeHTML(String(df.testCaseId))}</span>`
+        ? `<span class="case-id-tag btn-inspect-linked-test" data-project-id="${escapeHTML(df.projectId)}"${linkedSuiteIdAttr} data-case-id="${escapeHTML(String(df.testCaseId).trim())}" style="cursor: pointer;" title="${resolvedLinkedCtx ? `Inspect linked test case ${escapeHTML(String(df.testCaseId).trim())}` : `Linked test case ${escapeHTML(String(df.testCaseId).trim())} is unavailable`}">${escapeHTML(String(df.testCaseId).trim())}</span>`
         : `<span style="color: var(--text-muted); font-size: 0.76rem;">Independent</span>`;
 
       const safeExternalUrl = sanitizeExternalUrl(df.externalIssueUrl);
@@ -4969,8 +5093,15 @@ import {
     DOM.defectsTableContainer.querySelectorAll('.btn-inspect-linked-test').forEach(badge => {
       badge.addEventListener('click', () => {
         const pId = badge.getAttribute('data-project-id');
+        const sId = badge.getAttribute('data-suite-id');
         const cId = badge.getAttribute('data-case-id');
-        if (pId && cId) openTestCaseViewModal(pId, cId);
+        if (!pId || !cId) return;
+        const resolved = resolveProjectCaseContext(pId, cId);
+        if (!resolved) {
+          showToast(`Linked test case "${cId}" could not be found or has been deleted.`, 'warning');
+          return;
+        }
+        openTestCaseViewModal(resolved.project.id, sId || resolved.suite.id, resolved.testCase.id);
       });
     });
   }
@@ -5004,26 +5135,38 @@ import {
     if (DOM.defectForm) DOM.defectForm.reset();
     hideDefectError();
 
-    const selectedProjectId = projectId || (State.activeDefectsProjectId !== 'ALL' ? State.activeDefectsProjectId : projects[0].id);
-
-    // Populate Project Select Field
-    if (DOM.defectProjectSelectField) {
-      DOM.defectProjectSelectField.innerHTML = projects.map(p =>
-        `<option value="${escapeHTML(p.id)}" ${p.id === selectedProjectId ? 'selected' : ''}>${escapeHTML(p.name)}</option>`
-      ).join('');
-    }
-
-    // Populate Linked Test Case Select Field
-    updateDefectModalCasesDropdown(selectedProjectId, optLinkedCaseId);
-
     // Mode: Edit vs Create
     if (defectId) {
-      const proj = projects.find(p => p.id === selectedProjectId);
-      const df = (proj?.defects || []).find(d => d.id === defectId);
-      if (!df) return;
+      const requestedProjId = (projectId && projectId !== 'ALL') ? projectId : null;
+      let origProj = requestedProjId
+        ? projects.find(p => p.id === requestedProjId && (p.defects || []).some(d => d.id === defectId))
+        : null;
+      if (!origProj) {
+        origProj = projects.find(p => (p.defects || []).some(d => d.id === defectId)) || null;
+      }
+      const df = origProj ? (origProj.defects || []).find(d => d.id === defectId) : null;
+      if (!origProj || !df) {
+        showToast('Defect could not be found.', 'error');
+        return;
+      }
+
+      const selectedProjectId = origProj.id;
+
+      // Populate Project Select Field with real projects only (never 'ALL')
+      if (DOM.defectProjectSelectField) {
+        DOM.defectProjectSelectField.innerHTML = projects.map(p =>
+          `<option value="${escapeHTML(p.id)}" ${p.id === selectedProjectId ? 'selected' : ''}>${escapeHTML(p.name)}</option>`
+        ).join('');
+        DOM.defectProjectSelectField.value = selectedProjectId;
+      }
+
+      const existingLinkedCaseId = (df.testCaseId !== undefined && df.testCaseId !== null)
+        ? String(df.testCaseId).trim()
+        : '';
+      updateDefectModalCasesDropdown(selectedProjectId, existingLinkedCaseId);
 
       if (DOM.defectIdInput) DOM.defectIdInput.value = df.id;
-      if (DOM.defectProjectIdInput) DOM.defectProjectIdInput.value = proj.id;
+      if (DOM.defectProjectIdInput) DOM.defectProjectIdInput.value = origProj.id;
       if (DOM.defectModalTitle) DOM.defectModalTitle.textContent = `Edit Defect (${df.id})`;
       if (DOM.defectModalSubtitle) DOM.defectModalSubtitle.textContent = 'Update bug details, severity, status, and reproduction steps';
       if (DOM.defectModalSubmitText) DOM.defectModalSubmitText.textContent = 'Save Changes';
@@ -5036,9 +5179,27 @@ import {
       if (DOM.defectActualInput) DOM.defectActualInput.value = df.actualResult || '';
       if (DOM.defectDescInput) DOM.defectDescInput.value = df.description || '';
       if (DOM.defectUrlInput) DOM.defectUrlInput.value = df.externalIssueUrl || '';
-
-      if (DOM.defectLinkedCaseSelect) DOM.defectLinkedCaseSelect.value = (df.testCaseId !== undefined && df.testCaseId !== null) ? String(df.testCaseId) : '';
     } else {
+      // Create Mode: treat 'ALL' as UI scope, never as a project ID (QAV-ISS-007)
+      const candidateProjectId = (projectId && projectId !== 'ALL')
+        ? projectId
+        : (State.activeDefectsProjectId && State.activeDefectsProjectId !== 'ALL'
+            ? State.activeDefectsProjectId
+            : null);
+      const resolvedProj = (candidateProjectId && projects.find(p => p.id === candidateProjectId)) || projects[0];
+      const selectedProjectId = resolvedProj.id;
+
+      // Populate Project Select Field with real projects only
+      if (DOM.defectProjectSelectField) {
+        DOM.defectProjectSelectField.innerHTML = projects.map(p =>
+          `<option value="${escapeHTML(p.id)}" ${p.id === selectedProjectId ? 'selected' : ''}>${escapeHTML(p.name)}</option>`
+        ).join('');
+        DOM.defectProjectSelectField.value = selectedProjectId;
+      }
+
+      // Populate Linked Test Case Select Field for the resolved real project
+      updateDefectModalCasesDropdown(selectedProjectId, optLinkedCaseId);
+
       if (DOM.defectIdInput) DOM.defectIdInput.value = '';
       if (DOM.defectProjectIdInput) DOM.defectProjectIdInput.value = selectedProjectId;
       if (DOM.defectModalTitle) DOM.defectModalTitle.textContent = 'Create Defect';
@@ -5060,20 +5221,29 @@ import {
   function updateDefectModalCasesDropdown(projectId, selectedCaseId = null) {
     if (!DOM.defectLinkedCaseSelect) return;
 
+    const normalizedCaseId = (selectedCaseId !== undefined && selectedCaseId !== null)
+      ? String(selectedCaseId).trim()
+      : '';
     const projects = Storage.getProjects();
-    const proj = projects.find(p => p.id === projectId);
+    const proj = (projectId && projectId !== 'ALL')
+      ? projects.find(p => p.id === projectId)
+      : null;
+
     let optHtml = '<option value="">None (Independent defect)</option>';
+    let matchedCaseId = '';
 
     if (proj) {
       (proj.testSuites || []).forEach(suite => {
         (suite.testCases || []).forEach(tc => {
-          const isSelected = selectedCaseId && selectedCaseId === tc.id;
+          const isSelected = Boolean(normalizedCaseId && normalizedCaseId === tc.id);
+          if (isSelected) matchedCaseId = tc.id;
           optHtml += `<option value="${escapeHTML(tc.id)}" ${isSelected ? 'selected' : ''}>${escapeHTML(tc.id)}: ${escapeHTML(tc.title)}</option>`;
         });
       });
     }
 
     DOM.defectLinkedCaseSelect.innerHTML = optHtml;
+    DOM.defectLinkedCaseSelect.value = matchedCaseId;
   }
 
   function closeDefectModal() {
@@ -5094,11 +5264,17 @@ import {
     if (DOM.defectErrorAlert) DOM.defectErrorAlert.style.display = 'none';
   }
 
+  function restoreProjectsInPlace(targetArray, snapshotArray) {
+    targetArray.length = 0;
+    snapshotArray.forEach(item => targetArray.push(item));
+  }
+
   function handleSaveDefectSubmit(e) {
     e.preventDefault();
 
     const defectId = DOM.defectIdInput ? DOM.defectIdInput.value.trim() : '';
-    const projectId = DOM.defectProjectSelectField ? DOM.defectProjectSelectField.value : '';
+    const originalProjectIdInput = DOM.defectProjectIdInput ? DOM.defectProjectIdInput.value.trim() : '';
+    const targetProjectId = DOM.defectProjectSelectField ? DOM.defectProjectSelectField.value.trim() : '';
     const title = DOM.defectTitleInput ? DOM.defectTitleInput.value.trim() : '';
     const severity = DOM.defectSeveritySelect ? DOM.defectSeveritySelect.value : 'Medium';
     const status = DOM.defectStatusSelect ? DOM.defectStatusSelect.value : 'Open';
@@ -5115,36 +5291,80 @@ import {
       return;
     }
 
-    if (!projectId) {
-      showDefectError('Please select a project for this defect.');
+    if (!targetProjectId || targetProjectId === 'ALL') {
+      showDefectError('Please select a valid project for this defect.');
       return;
     }
 
     const projects = Storage.getProjects();
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return;
+    const targetProject = projects.find(p => p.id === targetProjectId);
+    if (!targetProject) {
+      showDefectError('Selected project does not exist.');
+      return;
+    }
 
-    if (!Array.isArray(project.defects)) project.defects = [];
+    // Validate linked Test Case belongs to the selected target project if specified (QAV-ISS-006 & QAV-ISS-007)
+    let targetCaseCtx = null;
+    if (linkedCaseId) {
+      targetCaseCtx = resolveProjectCaseContext(targetProject.id, linkedCaseId, projects);
+      if (!targetCaseCtx) {
+        showDefectError('Selected linked test case does not exist in the selected project.');
+        return;
+      }
+    }
+
+    // Capture full pre-mutation snapshot for atomic rollback if storage write fails
+    const preMutationSnapshot = JSON.parse(JSON.stringify(projects));
+    const nowIso = new Date().toISOString();
+
+    if (!Array.isArray(targetProject.defects)) targetProject.defects = [];
 
     if (defectId) {
-      // Edit existing defect
-      const df = project.defects.find(d => d.id === defectId);
-      if (!df) return;
+      // Locate original project containing defectId (QAV-ISS-006)
+      let originalProject = (originalProjectIdInput && originalProjectIdInput !== 'ALL')
+        ? projects.find(p => p.id === originalProjectIdInput && (p.defects || []).some(d => d.id === defectId))
+        : null;
+      if (!originalProject) {
+        originalProject = projects.find(p => (p.defects || []).some(d => d.id === defectId)) || null;
+      }
+      const df = originalProject ? (originalProject.defects || []).find(d => d.id === defectId) : null;
+      if (!originalProject || !df) {
+        showDefectError('The defect being edited could not be found in storage.');
+        return;
+      }
 
-      const prevDefectState = {
-        title: df.title,
-        priority: df.priority,
-        severity: df.severity,
-        status: df.status,
-        testCaseId: df.testCaseId,
-        stepsToReproduce: df.stepsToReproduce,
-        expectedResult: df.expectedResult,
-        actualResult: df.actualResult,
-        description: df.description,
-        externalIssueUrl: df.externalIssueUrl,
-        updatedAt: df.updatedAt
-      };
+      // 1. Remove stale defectId from any previously linked Test Cases across projects
+      projects.forEach(p => {
+        (p.testSuites || []).forEach(s => {
+          (s.testCases || []).forEach(tc => {
+            if (!Array.isArray(tc.defectIds)) return;
+            const isNewTargetCase = (p.id === targetProject.id && linkedCaseId && tc.id === linkedCaseId);
+            if (!isNewTargetCase && tc.defectIds.includes(defectId)) {
+              tc.defectIds = tc.defectIds.filter(id => id !== defectId);
+            }
+          });
+        });
+      });
 
+      // 2. If moving defect to a different project, transfer record cleanly without duplication
+      if (originalProject.id !== targetProject.id) {
+        originalProject.defects = (originalProject.defects || []).filter(d => d.id !== defectId);
+        (originalProject.executions || []).forEach(ex => {
+          if (Array.isArray(ex.defectIds) && ex.defectIds.includes(defectId)) {
+            ex.defectIds = ex.defectIds.filter(id => id !== defectId);
+          }
+        });
+        if (df.executionId) {
+          df.executionId = '';
+        }
+        originalProject.updatedAt = nowIso;
+
+        // Ensure no duplicate in targetProject.defects before inserting
+        targetProject.defects = targetProject.defects.filter(d => d.id !== defectId);
+        targetProject.defects.unshift(df);
+      }
+
+      // 3. Update defect fields while preserving ID, createdAt, and any unrelated properties
       df.title = title;
       df.priority = severity;
       df.severity = severity;
@@ -5155,24 +5375,22 @@ import {
       df.actualResult = actual;
       df.description = description;
       df.externalIssueUrl = url;
-      df.updatedAt = new Date().toISOString();
+      df.updatedAt = nowIso;
 
-      // If linked case changed, update test case linkage
-      if (linkedCaseId) {
-        (project.testSuites || []).forEach(s => {
-          (s.testCases || []).forEach(tc => {
-            if (tc.id === linkedCaseId) {
-              if (!Array.isArray(tc.defectIds)) tc.defectIds = [];
-              if (!tc.defectIds.includes(defectId)) tc.defectIds.unshift(defectId);
-            }
-          });
-        });
+      // 4. Add defectId to newly linked Test Case in targetProject if specified
+      if (targetCaseCtx && targetCaseCtx.testCase) {
+        if (!Array.isArray(targetCaseCtx.testCase.defectIds)) {
+          targetCaseCtx.testCase.defectIds = [];
+        }
+        if (!targetCaseCtx.testCase.defectIds.includes(defectId)) {
+          targetCaseCtx.testCase.defectIds.unshift(defectId);
+        }
       }
 
-      project.updatedAt = new Date().toISOString();
+      targetProject.updatedAt = nowIso;
       const saveRes = Storage.saveProjects(projects);
       if (!saveRes.ok) {
-        Object.assign(df, prevDefectState);
+        restoreProjectsInPlace(projects, preMutationSnapshot);
         showDefectError(saveRes.error || 'Failed to save defect to storage.');
         return;
       }
@@ -5197,28 +5415,26 @@ import {
         expectedResult: expected,
         actualResult: actual,
         externalIssueUrl: url,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: nowIso,
+        updatedAt: nowIso
       };
 
-      project.defects.unshift(newDefect);
+      targetProject.defects.unshift(newDefect);
 
-      // Link to test case if specified
-      if (linkedCaseId) {
-        (project.testSuites || []).forEach(s => {
-          (s.testCases || []).forEach(tc => {
-            if (tc.id === linkedCaseId) {
-              if (!Array.isArray(tc.defectIds)) tc.defectIds = [];
-              if (!tc.defectIds.includes(newId)) tc.defectIds.unshift(newId);
-            }
-          });
-        });
+      // Link to test case in targetProject if specified
+      if (targetCaseCtx && targetCaseCtx.testCase) {
+        if (!Array.isArray(targetCaseCtx.testCase.defectIds)) {
+          targetCaseCtx.testCase.defectIds = [];
+        }
+        if (!targetCaseCtx.testCase.defectIds.includes(newId)) {
+          targetCaseCtx.testCase.defectIds.unshift(newId);
+        }
       }
 
-      project.updatedAt = new Date().toISOString();
+      targetProject.updatedAt = nowIso;
       const saveRes = Storage.saveProjects(projects);
       if (!saveRes.ok) {
-        project.defects.shift();
+        restoreProjectsInPlace(projects, preMutationSnapshot);
         showDefectError(saveRes.error || 'Failed to save defect to storage.');
         return;
       }
@@ -5233,8 +5449,9 @@ import {
     renderTestExecutionWorkspace();
     renderReportsWorkspace();
 
-    if (State.currentView === 'project-details' && State.currentDetailProjectId === project.id) {
-      renderProjectDetailsData(project);
+    if (State.currentView === 'project-details' && State.currentDetailProjectId) {
+      const updatedDetailProj = Storage.getProjects().find(p => p.id === State.currentDetailProjectId);
+      if (updatedDetailProj) renderProjectDetailsData(updatedDetailProj);
     }
   }
 
@@ -5242,14 +5459,22 @@ import {
   // Prompt 4: Defect Inspection & Quick Status View Modal
   // ==========================================================================
   function openDefectViewModal(projectId, defectId) {
-    if (!DOM.defectViewModal) return;
+    if (!DOM.defectViewModal || !defectId) return;
 
     const projects = Storage.getProjects();
-    const project = projects.find(p => p.id === projectId);
+    let project = (projectId && projectId !== 'ALL')
+      ? projects.find(p => p.id === projectId && (p.defects || []).some(d => d.id === defectId))
+      : null;
+    if (!project) {
+      project = projects.find(p => (p.defects || []).some(d => d.id === defectId)) || null;
+    }
     if (!project) return;
 
     const df = (project.defects || []).find(d => d.id === defectId);
     if (!df) return;
+
+    DOM.defectViewModal.setAttribute('data-project-id', project.id);
+    DOM.defectViewModal.setAttribute('data-defect-id', df.id);
 
     if (DOM.viewDefectId) DOM.viewDefectId.textContent = df.id;
     if (DOM.viewDefectTitle) DOM.viewDefectTitle.textContent = df.title;
@@ -5278,16 +5503,31 @@ import {
 
     if (DOM.viewDefectLinkedCase) {
       const hasLinkedTest = df.testCaseId !== undefined && df.testCaseId !== null && String(df.testCaseId).trim() !== '';
-      DOM.viewDefectLinkedCase.textContent = hasLinkedTest ? String(df.testCaseId) : 'None (Independent)';
-      if (hasLinkedTest) {
-        DOM.viewDefectLinkedCase.style.cursor = 'pointer';
-        DOM.viewDefectLinkedCase.onclick = () => {
-          closeDefectViewModal();
-          openTestCaseViewModal(project.id, df.testCaseId);
-        };
-      } else {
+      const linkedCaseIdStr = hasLinkedTest ? String(df.testCaseId).trim() : '';
+      const resolvedLinked = hasLinkedTest ? resolveProjectCaseContext(project.id, linkedCaseIdStr, projects) : null;
+
+      if (!hasLinkedTest) {
+        DOM.viewDefectLinkedCase.textContent = 'None (Independent)';
         DOM.viewDefectLinkedCase.style.cursor = 'default';
         DOM.viewDefectLinkedCase.onclick = null;
+      } else if (resolvedLinked) {
+        DOM.viewDefectLinkedCase.textContent = linkedCaseIdStr;
+        DOM.viewDefectLinkedCase.style.cursor = 'pointer';
+        DOM.viewDefectLinkedCase.onclick = () => {
+          const latestCtx = resolveProjectCaseContext(project.id, linkedCaseIdStr);
+          if (!latestCtx) {
+            showToast(`Linked test case "${linkedCaseIdStr}" could not be found or has been deleted.`, 'warning');
+            return;
+          }
+          closeDefectViewModal();
+          openTestCaseViewModal(latestCtx.project.id, latestCtx.suite.id, latestCtx.testCase.id);
+        };
+      } else {
+        DOM.viewDefectLinkedCase.textContent = `${linkedCaseIdStr} (Unavailable)`;
+        DOM.viewDefectLinkedCase.style.cursor = 'not-allowed';
+        DOM.viewDefectLinkedCase.onclick = () => {
+          showToast(`Linked test case "${linkedCaseIdStr}" could not be found in project "${project.name}".`, 'warning');
+        };
       }
     }
 
@@ -5345,13 +5585,16 @@ import {
 
   function updateDefectQuickStatus(projectId, defectId, newStatus) {
     const projects = Storage.getProjects();
-    const project = projects.find(p => p.id === projectId);
+    const project = (projectId && projectId !== 'ALL')
+      ? projects.find(p => p.id === projectId && (p.defects || []).some(d => d.id === defectId))
+      : projects.find(p => (p.defects || []).some(d => d.id === defectId));
     if (!project) return;
 
     const df = (project.defects || []).find(d => d.id === defectId);
     if (!df) return;
 
     const oldStatus = df.status;
+    if (oldStatus === newStatus) return;
     df.status = newStatus;
     df.updatedAt = new Date().toISOString();
     project.updatedAt = df.updatedAt;
@@ -5447,7 +5690,9 @@ import {
         DOM.deleteWarningMsg.textContent = 'This test case and its verification steps will be permanently removed.';
       }
     } else if (type === 'defect') {
-      const proj = projects.find(p => p.id === parentId);
+      const proj = (parentId && parentId !== 'ALL')
+        ? projects.find(p => p.id === parentId && (p.defects || []).some(d => d.id === targetId))
+        : projects.find(p => (p.defects || []).some(d => d.id === targetId));
       const df = (proj?.defects || []).find(d => d.id === targetId);
       if (!df) {
         State.pendingConfirm = null;
@@ -5635,17 +5880,21 @@ import {
         showToast(`Test case deleted.`, 'info');
       }
     } else if (type === 'defect') {
-      const project = projects.find(p => p.id === parentId);
+      const project = (parentId && parentId !== 'ALL')
+        ? projects.find(p => p.id === parentId && (p.defects || []).some(d => d.id === targetId))
+        : projects.find(p => (p.defects || []).some(d => d.id === targetId));
       if (project && project.defects) {
         const df = project.defects.find(d => d.id === targetId);
         project.defects = project.defects.filter(d => d.id !== targetId);
-        // Also unlink from any execution or test case
-        (project.executions || []).forEach(ex => {
-          if (ex.defectIds) ex.defectIds = ex.defectIds.filter(id => id !== targetId);
-        });
-        (project.testSuites || []).forEach(s => {
-          (s.testCases || []).forEach(tc => {
-            if (tc.defectIds) tc.defectIds = tc.defectIds.filter(id => id !== targetId);
+        // Cleanly unlink from all executions and test cases across projects
+        projects.forEach(p => {
+          (p.executions || []).forEach(ex => {
+            if (Array.isArray(ex.defectIds)) ex.defectIds = ex.defectIds.filter(id => id !== targetId);
+          });
+          (p.testSuites || []).forEach(s => {
+            (s.testCases || []).forEach(tc => {
+              if (Array.isArray(tc.defectIds)) tc.defectIds = tc.defectIds.filter(id => id !== targetId);
+            });
           });
         });
         project.updatedAt = new Date().toISOString();
@@ -7239,8 +7488,9 @@ import {
 
   function renderDataWorkspace() {
     const projects = Storage.getProjects();
+    const { checklists: savedChecklists } = loadAllChecklists();
 
-    // 1. Calculate stored data metrics
+    // 1. Calculate stored data metrics (including QA Checklists — QAV-ISS-009)
     let totalPlans = 0;
     let totalSuites = 0;
     let totalCases = 0;
@@ -7259,30 +7509,38 @@ import {
       totalDefects += p.totalDefects ?? 0;
     });
 
+    let totalChecklistTests = 0;
+    savedChecklists.forEach(chk => {
+      const prog = calculateChecklistProgress(chk);
+      totalChecklistTests += prog.totalTests;
+    });
+
     if (DOM.dataStatProjects) DOM.dataStatProjects.textContent = projects.length.toString();
     if (DOM.dataStatPlans) DOM.dataStatPlans.textContent = totalPlans.toString();
     if (DOM.dataStatSuites) DOM.dataStatSuites.textContent = totalSuites.toString();
     if (DOM.dataStatCases) DOM.dataStatCases.textContent = totalCases.toString();
     if (DOM.dataStatExecs) DOM.dataStatExecs.textContent = totalExecs.toString();
     if (DOM.dataStatDefects) DOM.dataStatDefects.textContent = totalDefects.toString();
+    if (DOM.dataStatChecklists) DOM.dataStatChecklists.textContent = savedChecklists.length.toString();
+    if (DOM.dataStatChecklistsSub) {
+      DOM.dataStatChecklistsSub.textContent = `${totalChecklistTests} checklist test ${totalChecklistTests === 1 ? 'item' : 'items'}`;
+    }
 
-    // Storage footprint calculation
+    // Storage footprint calculation across all Qavora persistent keys (QAV-ISS-009)
     try {
-      const projRaw = safeStorageRead(STORAGE_KEYS.PROJECTS).raw || '';
-      const actRaw = safeStorageRead(STORAGE_KEYS.ACTIVITIES).raw || '';
-      const themeRaw = safeStorageRead(STORAGE_KEYS.THEME).raw || '';
-      const qaChkRaw = safeStorageRead(CHECKLISTS_STORAGE_KEY).raw || '';
-      const qaRunRaw = safeStorageRead(ACTIVE_RUNNER_STORAGE_KEY).raw || '';
-      const totalBytes = (projRaw.length + actRaw.length + themeRaw.length + qaChkRaw.length + qaRunRaw.length) * 2; // UTF-16
-      const kb = (totalBytes / 1024).toFixed(1);
-      const quotaBytes = 5 * 1024 * 1024; // ~5 MB quota
-      const percent = Math.min(100, Math.max(0.1, (totalBytes / quotaBytes) * 100)).toFixed(2);
-
-      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = `${kb} KB`;
-      if (DOM.dataStatStoragePercent) DOM.dataStatStoragePercent.textContent = `${percent}% of ~5 MB est. quota`;
-      if (DOM.dataStatStorageBar) DOM.dataStatStorageBar.style.width = `${Math.max(1, percent)}%`;
+      const footprint = calculateQavoraStorageFootprint();
+      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = footprint.formattedKB;
+      if (DOM.dataStatStoragePercent) {
+        DOM.dataStatStoragePercent.textContent =
+          footprint.totalBytes === 0
+            ? '0% of ~5 MB est. quota'
+            : `${footprint.clampedPercent.toFixed(2)}% of ~5 MB est. quota`;
+      }
+      if (DOM.dataStatStorageBar) {
+        DOM.dataStatStorageBar.style.width = `${footprint.barWidthPercent}%`;
+      }
     } catch {
-      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = 'Calculated';
+      if (DOM.dataStatStorageSize) DOM.dataStatStorageSize.textContent = '0.0 KB';
     }
 
     // 2. Populate Export Project Select
@@ -7404,6 +7662,7 @@ import {
     const projects = Storage.getProjects();
     const activities = Storage.getActivities();
     const qaChecklists = loadAllChecklists().checklists;
+    const qaActiveRunner = getActiveRunnerState();
 
     let totalCases = 0;
     let totalSuites = 0;
@@ -7428,6 +7687,8 @@ import {
       metadata: {
         totalProjects: projects.length,
         totalQaChecklists: qaChecklists.length,
+        activeChecklistId: qaActiveRunner.activeChecklistId,
+        lastQaView: qaActiveRunner.lastQaView,
         totalPlans: totalPlans,
         totalSuites: totalSuites,
         totalCases: totalCases,
@@ -7437,6 +7698,7 @@ import {
       },
       projects: projects,
       qaChecklists: qaChecklists,
+      qaActiveRunner: qaActiveRunner,
       activities: activities
     };
 
@@ -7666,16 +7928,138 @@ import {
     showToast(`Exported ${rows.length} defects to CSV`);
   }
 
+  function exportChecklistsCSV() {
+    const { checklists } = loadAllChecklists();
+    if (!Array.isArray(checklists) || checklists.length === 0) {
+      showToast('No saved QA checklists available to export', 'warning');
+      return;
+    }
+
+    const headers = [
+      'Checklist ID',
+      'Checklist Title',
+      'Phase Number',
+      'Phase Name',
+      'Section / Category',
+      'Test ID',
+      'Test Case Description',
+      'Priority',
+      'Checklist Progress Status',
+      'Supporting Notes',
+      'Promoted Project ID',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const rows = [];
+
+    checklists.forEach(chk => {
+      const docNotes = Array.isArray(chk.documentNotes)
+        ? chk.documentNotes.map(n => n.text).filter(Boolean).join(' | ')
+        : '';
+      const phases = Array.isArray(chk.phases) ? chk.phases : [];
+
+      if (phases.length === 0) {
+        rows.push([
+          chk.id || '',
+          chk.title || 'Untitled QA Checklist',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          'Not Started',
+          docNotes,
+          chk.promotedProjectId || '',
+          chk.createdAt || '',
+          chk.updatedAt || ''
+        ]);
+        return;
+      }
+
+      phases.forEach((ph, pIdx) => {
+        const phNum = ph.phaseNumber !== undefined && ph.phaseNumber !== null ? String(ph.phaseNumber) : String(pIdx + 1);
+        const phName = ph.name || `Phase ${phNum}`;
+        const phNotes = Array.isArray(ph.notes) ? ph.notes.map(n => n.text).filter(Boolean).join(' | ') : '';
+        const sections = Array.isArray(ph.sections) ? ph.sections : [];
+
+        sections.forEach(sec => {
+          const secName = sec.type === 'category' && sec.name ? sec.name : 'Direct Phase Tests';
+          const secNotes = Array.isArray(sec.notes) ? sec.notes.map(n => n.text).filter(Boolean).join(' | ') : '';
+          const combinedNotes = [docNotes, phNotes, secNotes].filter(Boolean).join(' — ');
+          const tests = Array.isArray(sec.tests) ? sec.tests : [];
+
+          if (tests.length === 0 && (sec.type === 'category' || secNotes)) {
+            rows.push([
+              chk.id || '',
+              chk.title || 'Untitled QA Checklist',
+              phNum,
+              phName,
+              secName,
+              '',
+              '(No test items in section)',
+              '',
+              'Not Started',
+              combinedNotes,
+              chk.promotedProjectId || '',
+              chk.createdAt || '',
+              chk.updatedAt || ''
+            ]);
+            return;
+          }
+
+          tests.forEach(tc => {
+            const isChecked = tc.completed === true || tc.status === 'Completed';
+            rows.push([
+              chk.id || '',
+              chk.title || 'Untitled QA Checklist',
+              phNum,
+              phName,
+              secName,
+              tc.testId || '',
+              tc.text || '',
+              tc.priority || '',
+              isChecked ? 'Completed (Checklist)' : 'Not Started (Checklist)',
+              combinedNotes,
+              chk.promotedProjectId || '',
+              chk.createdAt || '',
+              chk.updatedAt || ''
+            ]);
+          });
+        });
+      });
+    });
+
+    if (rows.length === 0) {
+      showToast('No checklist items found to export', 'warning');
+      return;
+    }
+
+    const csvContent = generateCSV(headers, rows);
+    const filename = `Qavora_QA_Checklists_${getISODate()}.csv`;
+
+    downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
+    Storage.addActivity('Exported QA Checklists CSV', `${checklists.length} Checklists (${rows.length} rows)`);
+    showToast(`Exported ${checklists.length} QA checklist(s) (${rows.length} rows) to CSV`);
+  }
+
   function generateAndPrintQAReport(projectId = null, docType = null) {
     const scope = projectId || DOM.printProjectSelect?.value || 'ALL';
     const type = docType || DOM.printReportTypeSelect?.value || 'qa-summary';
     const allProjects = Storage.getProjects();
+    const { checklists: savedChecklists } = loadAllChecklists();
     const targetProjects = scope === 'ALL' ? allProjects : allProjects.filter(p => p.id === scope);
 
     if (!DOM.printableReportContainer) return;
 
-    if (targetProjects.length === 0) {
-      showToast('No projects available to print report', 'warning');
+    const canPrintChecklists = (scope === 'ALL' && savedChecklists.length > 0) || type === 'qa-checklists';
+    if (targetProjects.length === 0 && !canPrintChecklists) {
+      showToast('No projects or saved QA checklists available to print report', 'warning');
+      return;
+    }
+    if (type === 'qa-checklists' && savedChecklists.length === 0) {
+      showToast('No saved QA checklists available to print report', 'warning');
       return;
     }
 
@@ -7708,10 +8092,13 @@ import {
     if (type === 'case-inventory') docTitle = 'Test Case Specifications & Inventory Ledger';
     else if (type === 'exec-audit') docTitle = 'Test Execution Runs & Verification Audit Trail';
     else if (type === 'defect-log') docTitle = 'Defects & Bug Tracking Registry';
+    else if (type === 'qa-checklists') docTitle = 'Saved QA Checklists & Runner Progress Ledger';
 
     let docScope = '';
-    if (scope === 'ALL') {
-      docScope = `Workspace Scope: All Projects (${targetProjects.length} Active Workspaces)`;
+    if (type === 'qa-checklists') {
+      docScope = `Workspace Scope: Saved QA Checklists (${savedChecklists.length} Checklists)`;
+    } else if (scope === 'ALL') {
+      docScope = `Workspace Scope: All Projects (${targetProjects.length} Active Workspaces) & Saved QA Checklists (${savedChecklists.length})`;
     } else {
       const p = targetProjects[0];
       const hasVer = p.version !== undefined && p.version !== null && String(p.version).trim() !== '';
@@ -7720,6 +8107,50 @@ import {
 
     const now = new Date();
     const dateFormatted = `${now.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    const buildChecklistsPrintSectionHtml = (sectionNumberPrefix = '') => {
+      if (savedChecklists.length === 0) {
+        return `
+          <div class="print-section-title">${sectionNumberPrefix}Saved QA Checklists Overview (0 Checklists)</div>
+          <p style="font-size: 9pt; color: #6b7280;">No saved QA checklists currently stored in workspace.</p>
+        `;
+      }
+      return `
+        <div class="print-section-title">${sectionNumberPrefix}Saved QA Checklists Overview (${savedChecklists.length} Checklists)</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Checklist Title</th>
+              <th>Phases</th>
+              <th>Total Items</th>
+              <th>Checked Off</th>
+              <th>Remaining</th>
+              <th>Runner Progress</th>
+              <th>Promoted Project</th>
+              <th>Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${savedChecklists.map(chk => {
+              const prog = calculateChecklistProgress(chk);
+              const linkedProj = allProjects.find(p => p.sourceChecklistId === chk.id || (chk.promotedProjectId && p.id === chk.promotedProjectId));
+              return `
+                <tr>
+                  <td><strong>${escapeHTML(chk.title)}</strong></td>
+                  <td>${prog.totalPhases}</td>
+                  <td>${prog.totalTests}</td>
+                  <td>${prog.completedTests}</td>
+                  <td>${prog.remainingTests}</td>
+                  <td><strong>${prog.percentage}%</strong></td>
+                  <td>${linkedProj ? escapeHTML(linkedProj.name) : '—'}</td>
+                  <td>${formatDisplayDate(chk.updatedAt)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    };
 
     let contentHtml = `
       <div class="print-header">
@@ -7781,7 +8212,7 @@ import {
             </tr>
           </thead>
           <tbody>
-            ${targetProjects.map(p => `
+            ${targetProjects.length === 0 ? '<tr><td colspan="12" style="text-align: center; color: #6b7280;">No formal projects in selected scope</td></tr>' : targetProjects.map(p => `
               <tr>
                 <td><strong>${escapeHTML(p.name)}</strong></td>
                 <td>${escapeHTML(p.type)}</td>
@@ -7815,7 +8246,7 @@ import {
             </tr>
           </thead>
           <tbody>
-            ${targetProjects.map(p => {
+            ${targetProjects.length === 0 ? '<tr><td colspan="8" style="text-align: center; color: #6b7280;">No test suites defined</td></tr>' : targetProjects.map(p => {
               const phasesMap = new Map();
               if (p.testPlan && Array.isArray(p.testPlan.phases)) {
                 p.testPlan.phases.forEach(ph => phasesMap.set(ph.id, ph.name));
@@ -7841,6 +8272,54 @@ import {
                     <td>${pRate}% (${exec}/${cases.length})</td>
                   </tr>
                 `;
+              }).join('');
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+      if (scope === 'ALL') {
+        contentHtml += buildChecklistsPrintSectionHtml('3. ');
+      }
+    } else if (type === 'qa-checklists') {
+      contentHtml += buildChecklistsPrintSectionHtml('1. ');
+      contentHtml += `
+        <div class="print-section-title">2. Detailed QA Checklist Items</div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Checklist</th>
+              <th>Phase</th>
+              <th>Section / Category</th>
+              <th>Test ID</th>
+              <th>Test Item Description</th>
+              <th>Priority</th>
+              <th>Runner Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${savedChecklists.map(chk => {
+              const phases = Array.isArray(chk.phases) ? chk.phases : [];
+              return phases.map((ph, pIdx) => {
+                const phName = ph.name || `Phase ${pIdx + 1}`;
+                const sections = Array.isArray(ph.sections) ? ph.sections : [];
+                return sections.map(sec => {
+                  const secName = sec.type === 'category' && sec.name ? sec.name : 'Direct Phase Tests';
+                  const tests = Array.isArray(sec.tests) ? sec.tests : [];
+                  return tests.map(tc => {
+                    const isChecked = tc.completed === true || tc.status === 'Completed';
+                    return `
+                      <tr>
+                        <td>${escapeHTML(chk.title)}</td>
+                        <td>${escapeHTML(phName)}</td>
+                        <td>${escapeHTML(secName)}</td>
+                        <td><code>${escapeHTML(tc.testId || '—')}</code></td>
+                        <td><strong>${escapeHTML(tc.text)}</strong></td>
+                        <td><span class="print-badge">${escapeHTML(tc.priority || '—')}</span></td>
+                        <td><span class="print-badge">${isChecked ? 'Completed' : 'Not Started'}</span></td>
+                      </tr>
+                    `;
+                  }).join('');
+                }).join('');
               }).join('');
             }).join('')}
           </tbody>
@@ -8083,10 +8562,36 @@ import {
       return;
     }
 
+    // Validate optional qaChecklists and qaActiveRunner fields on object backups (QAV-ISS-013)
+    if (!Array.isArray(data)) {
+      if ('qaChecklists' in data && data.qaChecklists !== null && !Array.isArray(data.qaChecklists)) {
+        showImportValidationAlert('Invalid backup format: "qaChecklists" must be an array.');
+        return;
+      }
+      if ('projects' in data && data.projects !== null && !Array.isArray(data.projects)) {
+        showImportValidationAlert('Invalid backup format: "projects" must be an array.');
+        return;
+      }
+      const candidateRunner = data.qaActiveRunner !== undefined ? data.qaActiveRunner : data.activeRunnerState;
+      if (
+        candidateRunner !== undefined &&
+        candidateRunner !== null &&
+        (typeof candidateRunner !== 'object' || Array.isArray(candidateRunner))
+      ) {
+        showImportValidationAlert('Invalid backup format: "qaActiveRunner" must be a valid runner state object.');
+        return;
+      }
+    }
+
     let rawProjects = [];
     const hasQaChecklistsField = !Array.isArray(data) && Array.isArray(data.qaChecklists);
     const rawQaChecklists = hasQaChecklistsField
       ? data.qaChecklists.filter(c => c && typeof c === 'object')
+      : null;
+    const hasQaActiveRunnerField =
+      !Array.isArray(data) && ('qaActiveRunner' in data || 'activeRunnerState' in data);
+    const rawQaActiveRunner = hasQaActiveRunnerField
+      ? (data.qaActiveRunner !== undefined ? data.qaActiveRunner : data.activeRunnerState)
       : null;
     let payloadType = 'Workspace Payload';
 
@@ -8113,7 +8618,16 @@ import {
     // Sanitize & validate each candidate project
     rawProjects = rawProjects.filter(p => p && typeof p === 'object' && (p.name || p.id));
 
-    if (rawProjects.length === 0 && (!rawQaChecklists || rawQaChecklists.length === 0)) {
+    const isExplicitFullBackup =
+      !Array.isArray(data) &&
+      (data.type === 'full_backup' || data.backupFormat === 'Qavora_Full_Backup') &&
+      Array.isArray(data.projects);
+
+    if (
+      !isExplicitFullBackup &&
+      rawProjects.length === 0 &&
+      (!rawQaChecklists || rawQaChecklists.length === 0)
+    ) {
       showImportValidationAlert('No valid Qavora project or QA checklist records found in file.');
       return;
     }
@@ -8210,6 +8724,8 @@ import {
     State.pendingImportPayload = {
       rawProjects: rawProjects,
       rawQaChecklists: rawQaChecklists,
+      hasQaActiveRunner: hasQaActiveRunnerField,
+      rawQaActiveRunner: rawQaActiveRunner,
       payloadType: payloadType,
       activities: Array.isArray(data.activities) ? data.activities : []
     };
@@ -8321,9 +8837,10 @@ import {
       const currentProjects = Storage.getProjects();
       const currentActivities = Storage.getActivities();
       const currentChecklists = loadAllChecklists().checklists;
+      const currentActiveRunner = getActiveRunnerState();
 
       if (strategy === 'replace') {
-        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists, currentActiveRunner);
       }
 
       const applyRes = applyChecklistTransferPayload(State.pendingImportPayload.transferPayload, strategy);
@@ -8342,7 +8859,13 @@ import {
       Storage.addActivity(actionLabel, summaryDetail);
 
       closeImportPreviewModal();
-      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      if (qaRunnerController) {
+        if (typeof qaRunnerController.syncFromStorage === 'function') {
+          qaRunnerController.syncFromStorage();
+        } else {
+          qaRunnerController.refreshGlobalBadgesAndBanners();
+        }
+      }
       const toastSuccessMsg = strategy === 'replace'
         ? `Restored ${applyRes.importedCount} QA Checklist(s) from transfer code. Pre-restore rollback snapshot saved.`
         : `Merged ${applyRes.importedCount} QA Checklist(s) into workspace.`;
@@ -8360,13 +8883,17 @@ import {
     const strategy = document.querySelector('input[name="import-mode"]:checked')?.value || 'merge';
     const importedRaw = State.pendingImportPayload.rawProjects;
     const importedRawChecklists = State.pendingImportPayload.rawQaChecklists;
+    const hasQaActiveRunner = Boolean(State.pendingImportPayload.hasQaActiveRunner);
+    const importedRawRunner = State.pendingImportPayload.rawQaActiveRunner;
+
     const currentProjects = Storage.getProjects();
     const currentActivities = Storage.getActivities();
     const currentChecklists = loadAllChecklists().checklists;
+    const currentActiveRunner = getActiveRunnerState();
 
     if (strategy === 'replace') {
-      // 1. Create safety rollback snapshot in sessionStorage (preserving both projects and QA checklists)
-      Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+      // 1. Create safety rollback snapshot in sessionStorage (preserving projects, activities, QA checklists, and active runner state — QAV-ISS-013)
+      Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists, currentActiveRunner);
 
       // 2. Persist imported projects through the normalization engine
       const saveProjRes = Storage.saveProjects(importedRaw);
@@ -8384,6 +8911,7 @@ import {
 
       // 3. Replace QA checklists only when the backup explicitly includes qaChecklists
       let restoredChkCount = currentChecklists.length;
+      let targetChecklistsForRunner = currentChecklists;
       if (Array.isArray(importedRawChecklists)) {
         const normalizedChks = importedRawChecklists
           .map((c, idx) => normalizeChecklistRecord(c, idx))
@@ -8396,9 +8924,24 @@ import {
           return;
         }
         restoredChkCount = normalizedChks.length;
+        targetChecklistsForRunner = normalizedChks;
       }
 
-      // 4. Restore activities if provided
+      // 4. Restore or reconcile active runner state (QAV-ISS-013)
+      // Backward-compatible with older backups that omit qaActiveRunner:
+      if (hasQaActiveRunner || Array.isArray(importedRawChecklists)) {
+        const candidateRunnerState = hasQaActiveRunner ? importedRawRunner : currentActiveRunner;
+        const runnerSaveRes = replaceActiveRunnerState(candidateRunnerState, targetChecklistsForRunner);
+        if (!runnerSaveRes.ok) {
+          Storage.saveProjects(currentProjects);
+          saveAllChecklists(currentChecklists);
+          replaceActiveRunnerState(currentActiveRunner, currentChecklists);
+          showToast(`Import failed while restoring active runner state: ${runnerSaveRes.error}`, 'error');
+          return;
+        }
+      }
+
+      // 5. Restore activities if provided
       if (Array.isArray(State.pendingImportPayload.activities) && State.pendingImportPayload.activities.length > 0) {
         Storage.saveActivities(State.pendingImportPayload.activities);
       }
@@ -8408,7 +8951,13 @@ import {
       Storage.addActivity('Restored Workspace Backup', actDetail);
 
       closeImportPreviewModal();
-      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      if (qaRunnerController) {
+        if (typeof qaRunnerController.syncFromStorage === 'function') {
+          qaRunnerController.syncFromStorage();
+        } else {
+          qaRunnerController.refreshGlobalBadgesAndBanners();
+        }
+      }
       showToast(`Restored ${actDetail}. Pre-restore rollback snapshot saved.`, 'success');
       renderDashboard();
       renderDataWorkspace();
@@ -8440,6 +8989,7 @@ import {
       }
 
       let mergedChkCount = 0;
+      let finalMergedChecklists = currentChecklists;
       if (Array.isArray(importedRawChecklists) && importedRawChecklists.length > 0) {
         const existingChkIds = new Set(currentChecklists.map(c => c.id));
         const existingChkTitles = new Set(currentChecklists.map(c => (c.title || '').trim().toLowerCase()));
@@ -8458,7 +9008,8 @@ import {
             existingChkTitles.add((copy.title || '').trim().toLowerCase());
             return copy;
           });
-        const chkSaveRes = saveAllChecklists([...processedChks, ...currentChecklists]);
+        finalMergedChecklists = [...processedChks, ...currentChecklists];
+        const chkSaveRes = saveAllChecklists(finalMergedChecklists);
         if (!chkSaveRes.ok) {
           if (processedImported.length > 0) {
             Storage.saveProjects(currentProjects);
@@ -8469,13 +9020,27 @@ import {
         mergedChkCount = processedChks.length;
       }
 
+      // If no active checklist was set prior to merge and backup provides one (or checklists were merged), reconcile active runner state
+      if (!currentActiveRunner.activeChecklistId && (hasQaActiveRunner || mergedChkCount > 0)) {
+        replaceActiveRunnerState(
+          hasQaActiveRunner ? importedRawRunner : currentActiveRunner,
+          finalMergedChecklists
+        );
+      }
+
       const mergeSummary = mergedChkCount > 0
         ? `${processedImported.length} Projects, ${mergedChkCount} QA Checklists`
         : `${processedImported.length} Projects`;
       Storage.addActivity('Merged Import', mergeSummary);
 
       closeImportPreviewModal();
-      if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+      if (qaRunnerController) {
+        if (typeof qaRunnerController.syncFromStorage === 'function') {
+          qaRunnerController.syncFromStorage();
+        } else {
+          qaRunnerController.refreshGlobalBadgesAndBanners();
+        }
+      }
       showToast(`Merged ${mergeSummary} into workspace.`, 'success');
       renderDashboard();
       renderDataWorkspace();
@@ -8489,6 +9054,10 @@ import {
       return;
     }
 
+    const prevProjects = Storage.getProjects();
+    const prevChecklists = loadAllChecklists().checklists;
+    const prevRunnerState = getActiveRunnerState();
+
     const restoredProjects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
     const saveProjRes = Storage.saveProjects(restoredProjects);
     if (!saveProjRes.ok) {
@@ -8496,12 +9065,30 @@ import {
       return;
     }
 
+    const restoredChecklists = Array.isArray(snapshot.qaChecklists)
+      ? snapshot.qaChecklists
+      : prevChecklists;
+
     if (Array.isArray(snapshot.qaChecklists)) {
-      const chkSaveRes = saveAllChecklists(snapshot.qaChecklists);
+      const chkSaveRes = saveAllChecklists(restoredChecklists);
       if (!chkSaveRes.ok) {
+        Storage.saveProjects(prevProjects);
         showToast(`Checklist rollback failed: ${chkSaveRes.error}. Recovery snapshot preserved.`, 'error');
         return;
       }
+    }
+
+    // Restore active runner state from snapshot (or reconcile with restored checklists if older snapshot)
+    const runnerSaveRes = replaceActiveRunnerState(
+      snapshot.qaActiveRunner !== undefined ? snapshot.qaActiveRunner : prevRunnerState,
+      restoredChecklists
+    );
+    if (!runnerSaveRes.ok) {
+      Storage.saveProjects(prevProjects);
+      saveAllChecklists(prevChecklists);
+      replaceActiveRunnerState(prevRunnerState, prevChecklists);
+      showToast(`Runner state rollback failed: ${runnerSaveRes.error}. Recovery snapshot preserved.`, 'error');
+      return;
     }
 
     if (Array.isArray(snapshot.activities)) {
@@ -8513,7 +9100,13 @@ import {
     Storage.addActivity('Rolled Back Workspace', `${restoredProjects.length} Projects${chkSuffix} Restored`);
     Storage.clearRollbackSnapshot();
 
-    if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+    if (qaRunnerController) {
+      if (typeof qaRunnerController.syncFromStorage === 'function') {
+        qaRunnerController.syncFromStorage();
+      } else {
+        qaRunnerController.refreshGlobalBadgesAndBanners();
+      }
+    }
     showToast(`Workspace rolled back to snapshot (${restoredProjects.length} projects${chkSuffix} restored).`, 'info');
     renderDashboard();
     renderDataWorkspace();
@@ -8539,13 +9132,16 @@ import {
     const currentProjects = Storage.getProjects();
     const currentActivities = Storage.getActivities();
     const currentChecklists = loadAllChecklists().checklists;
-    Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+    const currentActiveRunner = getActiveRunnerState();
+    Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists, currentActiveRunner);
 
     const pRes = Storage.saveProjects([]);
     const cRes = saveAllChecklists([]);
-    if (!pRes.ok || !cRes.ok) {
+    const rRes = replaceActiveRunnerState({ activeChecklistId: null, lastQaView: null }, []);
+    if (!pRes.ok || !cRes.ok || !rRes.ok) {
       Storage.saveProjects(currentProjects);
       saveAllChecklists(currentChecklists);
+      replaceActiveRunnerState(currentActiveRunner, currentChecklists);
       showToast('Reset failed due to storage error. Existing workspace preserved.', 'error');
       return;
     }
@@ -8553,7 +9149,13 @@ import {
     Storage.clearActivities();
     closeResetConfirmModal();
 
-    if (qaRunnerController) qaRunnerController.refreshGlobalBadgesAndBanners();
+    if (qaRunnerController) {
+      if (typeof qaRunnerController.syncFromStorage === 'function') {
+        qaRunnerController.syncFromStorage();
+      } else {
+        qaRunnerController.refreshGlobalBadgesAndBanners();
+      }
+    }
     showToast('All workspace projects, QA checklists, and test data have been cleared.', 'warning');
     renderDashboard();
     renderDataWorkspace();
@@ -8920,8 +9522,8 @@ import {
     if (DOM.execProjectSelect) {
       DOM.execProjectSelect.addEventListener('change', (e) => {
         State.activeExecProjectId = e.target.value;
-        State.execFilterPhase = 'ALL';
-        State.execFilterSuite = 'ALL';
+        State.execPhaseFilter = 'ALL';
+        State.execSuiteFilter = 'ALL';
         renderTestExecutionWorkspace();
       });
     }
@@ -8941,35 +9543,46 @@ import {
     // Execution Workspace Filters & Search
     if (DOM.execFilterPhase) {
       DOM.execFilterPhase.addEventListener('change', (e) => {
-        State.execFilterPhase = e.target.value;
+        State.execPhaseFilter = e.target.value;
+        if (State.execPhaseFilter !== 'ALL' && State.execSuiteFilter !== 'ALL') {
+          const projects = Storage.getProjects();
+          const project = projects.find(p => p.id === State.activeExecProjectId);
+          const suites = project?.testSuites || [];
+          const suiteInPhase = suites.some(
+            s => s.id === State.execSuiteFilter && s.phaseId === State.execPhaseFilter
+          );
+          if (!suiteInPhase) {
+            State.execSuiteFilter = 'ALL';
+          }
+        }
         renderTestExecutionWorkspace();
       });
     }
 
     if (DOM.execFilterSuite) {
       DOM.execFilterSuite.addEventListener('change', (e) => {
-        State.execFilterSuite = e.target.value;
+        State.execSuiteFilter = e.target.value;
         renderTestExecutionWorkspace();
       });
     }
 
     if (DOM.execFilterStatus) {
       DOM.execFilterStatus.addEventListener('change', (e) => {
-        State.execFilterStatus = e.target.value;
+        State.execStatusFilter = e.target.value;
         renderTestExecutionWorkspace();
       });
     }
 
     if (DOM.execFilterPriority) {
       DOM.execFilterPriority.addEventListener('change', (e) => {
-        State.execFilterPriority = e.target.value;
+        State.execPriorityFilter = e.target.value;
         renderTestExecutionWorkspace();
       });
     }
 
     if (DOM.execFilterCategory) {
       DOM.execFilterCategory.addEventListener('change', (e) => {
-        State.execFilterCategory = e.target.value;
+        State.execCategoryFilter = e.target.value;
         renderTestExecutionWorkspace();
       });
     }
@@ -9013,18 +9626,28 @@ import {
 
     if (DOM.btnPassAllSteps) {
       DOM.btnPassAllSteps.addEventListener('click', () => {
-        State.execModalSteps.forEach(st => { st.status = 'Pass'; });
-        renderExecutionStepsList();
-        if (DOM.execStatusSelect && DOM.execStatusSelect.value === 'Not Run') {
-          DOM.execStatusSelect.value = 'Pass';
-          handleExecStatusChange('Pass');
+        if (!State.modalExecContext || !Array.isArray(State.modalExecContext.steps)) {
+          return;
         }
+        State.modalExecContext.steps.forEach(st => {
+          if (st && typeof st === 'object') {
+            st.status = 'completed';
+          }
+        });
+        renderExecutionStepsList();
       });
     }
 
     if (DOM.btnResetAllSteps) {
       DOM.btnResetAllSteps.addEventListener('click', () => {
-        State.execModalSteps.forEach(st => { st.status = 'Not Run'; });
+        if (!State.modalExecContext || !Array.isArray(State.modalExecContext.steps)) {
+          return;
+        }
+        State.modalExecContext.steps.forEach(st => {
+          if (st && typeof st === 'object') {
+            st.status = 'untested';
+          }
+        });
         renderExecutionStepsList();
       });
     }
@@ -9057,35 +9680,35 @@ import {
 
     if (DOM.defectsFilterSeverity) {
       DOM.defectsFilterSeverity.addEventListener('change', (e) => {
-        State.defectsFilterSeverity = e.target.value;
+        State.defectSeverityFilter = e.target.value;
         renderDefectsWorkspace();
       });
     }
 
     if (DOM.defectsFilterStatus) {
       DOM.defectsFilterStatus.addEventListener('change', (e) => {
-        State.defectsFilterStatus = e.target.value;
+        State.defectStatusFilter = e.target.value;
         renderDefectsWorkspace();
       });
     }
 
     if (DOM.defectsSortBy) {
       DOM.defectsSortBy.addEventListener('change', (e) => {
-        State.defectsSortBy = e.target.value;
+        State.defectSortBy = e.target.value;
         renderDefectsWorkspace();
       });
     }
 
     if (DOM.defectsSearchInput) {
       DOM.defectsSearchInput.addEventListener('input', (e) => {
-        State.defectsSearchQuery = e.target.value;
+        State.defectSearchQuery = e.target.value;
         renderDefectsWorkspace();
       });
     }
 
     if (DOM.defectsSearchClearBtn) {
       DOM.defectsSearchClearBtn.addEventListener('click', () => {
-        State.defectsSearchQuery = '';
+        State.defectSearchQuery = '';
         if (DOM.defectsSearchInput) DOM.defectsSearchInput.value = '';
         renderDefectsWorkspace();
       });
@@ -9328,6 +9951,10 @@ import {
       DOM.btnExportDefectsCsv.addEventListener('click', exportDefectsCSV);
     }
 
+    if (DOM.btnExportChecklistsCsv) {
+      DOM.btnExportChecklistsCsv.addEventListener('click', exportChecklistsCSV);
+    }
+
     if (DOM.btnPrintQaReport) {
       DOM.btnPrintQaReport.addEventListener('click', () => {
         generateAndPrintQAReport();
@@ -9460,8 +10087,24 @@ import {
 
     bindEvents();
     qaRunnerController = initQARunnerAndChecklists({
-      navigateTo: (targetView) => switchView(targetView),
-      notify: showToast
+      navigateTo: (targetView, optArg) => switchView(targetView, optArg),
+      notify: showToast,
+      onChecklistPromoted: ({ project, checklist, summary }) => {
+        Storage.addActivity(
+          'Promoted Checklist to Project',
+          `${checklist.title} → ${project.name} (${summary.casesCount} cases)`
+        );
+        renderDashboard();
+        renderMyProjects();
+        renderDataWorkspace();
+        showToast(
+          `Promoted "${checklist.title}" to formal project "${project.name}" (${summary.phasesCount} phases, ${summary.suitesCount} suites, ${summary.casesCount} test cases initialized as Not Run).`,
+          'success'
+        );
+      },
+      onOpenPromotedProject: (projectId) => {
+        switchView('plans', projectId);
+      }
     });
     initChecklistGenerator({
       notify: showToast,
@@ -9475,7 +10118,8 @@ import {
         const currentProjects = Storage.getProjects();
         const currentActivities = Storage.getActivities();
         const currentChecklists = loadAllChecklists().checklists;
-        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists);
+        const currentActiveRunner = getActiveRunnerState();
+        Storage.saveRollbackSnapshot(currentProjects, currentActivities, currentChecklists, currentActiveRunner);
       },
       onAfterTransferImport: ({ mode, importedCount }) => {
         const actionLabel = mode === 'replace'
@@ -9483,7 +10127,11 @@ import {
           : 'Transferred Checklists (Merge)';
         Storage.addActivity(actionLabel, `${importedCount} QA Checklists`);
         if (qaRunnerController) {
-          qaRunnerController.refreshGlobalBadgesAndBanners();
+          if (typeof qaRunnerController.syncFromStorage === 'function') {
+            qaRunnerController.syncFromStorage();
+          } else {
+            qaRunnerController.refreshGlobalBadgesAndBanners();
+          }
         }
         renderDashboard();
         renderDataWorkspace();

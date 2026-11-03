@@ -148,10 +148,10 @@ export function safeStorageRead(key) {
   const { backend, isFallback } = getStorageBackend();
   try {
     const raw = backend.getItem(key);
-    return { raw, isFallback, error: null };
+    return { ok: true, raw, value: raw, isFallback, error: null };
   } catch (err) {
     console.error(`Qavora: Storage read failed for key ${key}`, err);
-    return { raw: null, isFallback, error: err };
+    return { ok: false, raw: null, value: null, isFallback, error: err };
   }
 }
 
@@ -434,6 +434,16 @@ export function normalizeChecklistRecord(rawChecklist) {
         })
     : [];
 
+  const promotedProjectId =
+    typeof rawChecklist.promotedProjectId === 'string' && rawChecklist.promotedProjectId.trim()
+      ? rawChecklist.promotedProjectId.trim()
+      : null;
+
+  const promotedAt =
+    typeof rawChecklist.promotedAt === 'string' && !Number.isNaN(Date.parse(rawChecklist.promotedAt))
+      ? rawChecklist.promotedAt
+      : null;
+
   return {
     id:
       typeof rawChecklist.id === 'string' && rawChecklist.id.trim()
@@ -444,7 +454,9 @@ export function normalizeChecklistRecord(rawChecklist) {
     createdAt,
     updatedAt,
     documentNotes,
-    phases
+    phases,
+    promotedProjectId,
+    promotedAt
   };
 }
 
@@ -1253,3 +1265,613 @@ export function removeTestFromChecklist(checklistId, targetTestId) {
     return false;
   });
 }
+
+// ============================================================================
+// Active Runner State Normalization & Full Backup / Rollback Support (QAV-ISS-013)
+// ============================================================================
+
+const VALID_QA_VIEWS = ['checklist-generator', 'my-checklists', 'qa-runner'];
+
+export function normalizeActiveRunnerState(rawRunnerState, checklists = null) {
+  let activeChecklistId = null;
+  let lastQaView = null;
+
+  if (rawRunnerState && typeof rawRunnerState === 'object' && !Array.isArray(rawRunnerState)) {
+    if (typeof rawRunnerState.activeChecklistId === 'string' && rawRunnerState.activeChecklistId.trim()) {
+      activeChecklistId = rawRunnerState.activeChecklistId.trim();
+    }
+    if (typeof rawRunnerState.lastQaView === 'string' && VALID_QA_VIEWS.includes(rawRunnerState.lastQaView.trim())) {
+      lastQaView = rawRunnerState.lastQaView.trim();
+    }
+  }
+
+  if (Array.isArray(checklists)) {
+    const validIds = new Set(
+      checklists
+        .filter(c => c && typeof c.id === 'string' && c.id.trim())
+        .map(c => c.id.trim())
+    );
+    if (activeChecklistId && !validIds.has(activeChecklistId)) {
+      activeChecklistId = checklists.length > 0 ? checklists[0].id : null;
+    } else if (!activeChecklistId && checklists.length > 0 && lastQaView === 'qa-runner') {
+      activeChecklistId = checklists[0].id;
+    }
+    if (checklists.length === 0 && lastQaView === 'qa-runner') {
+      lastQaView = null;
+    }
+  }
+
+  return {
+    activeChecklistId,
+    lastQaView
+  };
+}
+
+export function replaceActiveRunnerState(rawRunnerState, checklists = null) {
+  try {
+    const normalized = normalizeActiveRunnerState(rawRunnerState, checklists);
+    const writeRes = safeStorageWrite(
+      ACTIVE_RUNNER_STORAGE_KEY,
+      JSON.stringify(normalized),
+      'restoring active runner state'
+    );
+    return {
+      ...writeRes,
+      state: normalized
+    };
+  } catch (err) {
+    const isQuota = isQuotaExceededError(err);
+    const isSecurity = isSecurityError(err);
+    return {
+      ok: false,
+      isFallback: false,
+      isQuota,
+      isSecurity,
+      state: { activeChecklistId: null, lastQaView: null },
+      error: getStorageErrorMessage(err, 'restoring active runner state'),
+      valueOf() { return false; }
+    };
+  }
+}
+
+// ============================================================================
+// Persistent Storage Footprint Calculation (QAV-ISS-009)
+// ============================================================================
+
+export const QAVORA_PERSISTENT_STORAGE_KEYS = Object.freeze([
+  'qavora_projects_v1',
+  'qavora_activities_v1',
+  'qavora_theme_preference',
+  CHECKLISTS_STORAGE_KEY,
+  ACTIVE_RUNNER_STORAGE_KEY
+]);
+
+export function calculateQavoraStorageFootprint(quotaBytes = 5 * 1024 * 1024) {
+  const { backend } = getStorageBackend();
+  const keyBytes = {};
+  let totalBytes = 0;
+
+  for (const key of QAVORA_PERSISTENT_STORAGE_KEYS) {
+    let raw = '';
+    try {
+      const val = backend.getItem(key);
+      raw = typeof val === 'string' ? val : '';
+    } catch (_err) {
+      raw = '';
+    }
+    const bytes = raw.length * 2; // UTF-16 code units in browser Web Storage
+    keyBytes[key] = bytes;
+    totalBytes += bytes;
+  }
+
+  const kbNumeric = totalBytes / 1024;
+  const formattedKB = totalBytes === 0 ? '0.0 KB' : `${kbNumeric.toFixed(1)} KB`;
+  const rawPercent = quotaBytes > 0 ? (totalBytes / quotaBytes) * 100 : 0;
+  const clampedPercent = totalBytes === 0 ? 0 : Math.min(100, Math.max(0.01, rawPercent));
+  const formattedPercent =
+    totalBytes === 0
+      ? '0% used'
+      : rawPercent < 1
+        ? `< 1% used (${ kbNumeric.toFixed(1) } KB)`
+        : `${Math.min(100, rawPercent).toFixed(2)}% used`;
+  const barWidthPercent = totalBytes === 0 ? 0 : Math.min(100, Math.max(1, rawPercent));
+
+  return {
+    totalBytes,
+    kbNumeric,
+    formattedKB,
+    rawPercent,
+    clampedPercent,
+    formattedPercent,
+    barWidthPercent,
+    keyBytes
+  };
+}
+
+// ============================================================================
+// Promote Saved QA Checklist to Formal Project (QAV-ISS-001)
+// ============================================================================
+
+const PROJECTS_STORAGE_KEY = 'qavora_projects_v1';
+
+const FORMAL_SUITE_CATEGORIES = [
+  'Functional',
+  'UI/UX',
+  'Security',
+  'Performance',
+  'Compatibility',
+  'Integration',
+  'Regression',
+  'Accessibility',
+  'Other'
+];
+
+function inferFormalSuiteCategory(sectionName) {
+  if (!sectionName || typeof sectionName !== 'string') return 'Functional';
+  const clean = sectionName.trim();
+  const exact = FORMAL_SUITE_CATEGORIES.find(c => c.toLowerCase() === clean.toLowerCase());
+  if (exact) return exact;
+
+  const lower = clean.toLowerCase();
+  if (lower.includes('ui') || lower.includes('ux') || lower.includes('visual') || lower.includes('design') || lower.includes('layout')) {
+    return 'UI/UX';
+  }
+  if (lower.includes('secur') || lower.includes('auth') || lower.includes('permission') || lower.includes('xss') || lower.includes('csrf')) {
+    return 'Security';
+  }
+  if (lower.includes('perf') || lower.includes('speed') || lower.includes('load') || lower.includes('latency')) {
+    return 'Performance';
+  }
+  if (lower.includes('compat') || lower.includes('browser') || lower.includes('device') || lower.includes('mobile') || lower.includes('responsive')) {
+    return 'Compatibility';
+  }
+  if (lower.includes('integrat') || lower.includes('api') || lower.includes('webhook') || lower.includes('sync')) {
+    return 'Integration';
+  }
+  if (lower.includes('regress') || lower.includes('smoke') || lower.includes('sanity')) {
+    return 'Regression';
+  }
+  if (lower.includes('accessib') || lower.includes('a11y') || lower.includes('wcag') || lower.includes('keyboard') || lower.includes('screen reader')) {
+    return 'Accessibility';
+  }
+  return 'Functional';
+}
+
+function normalizeFormalCasePriority(rawPriority) {
+  if (!rawPriority || typeof rawPriority !== 'string') return 'Medium';
+  const p = rawPriority.trim().toLowerCase();
+  if (p === 'critical' || p === 'p0' || p === 'blocker' || p === 'urgent') return 'Critical';
+  if (p === 'high' || p === 'p1' || p === 'major') return 'High';
+  if (p === 'low' || p === 'p3' || p === 'p4' || p === 'minor' || p === 'trivial') return 'Low';
+  return 'Medium';
+}
+
+export function getChecklistPromotionPreview(checklist) {
+  const normalized = normalizeChecklistRecord(checklist);
+  if (!normalized) {
+    return {
+      valid: false,
+      title: '',
+      phasesCount: 0,
+      suitesCount: 0,
+      casesCount: 0,
+      completedChecklistItemsCount: 0
+    };
+  }
+
+  let phasesCount = 0;
+  let suitesCount = 0;
+  let casesCount = 0;
+  let completedChecklistItemsCount = 0;
+
+  for (const phase of normalized.phases) {
+    phasesCount += 1;
+    const sections = Array.isArray(phase.sections) ? phase.sections : [];
+    const activeSections = sections.filter(sec => {
+      const hasTests = Array.isArray(sec.tests) && sec.tests.length > 0;
+      const hasNotes = Array.isArray(sec.notes) && sec.notes.length > 0;
+      return sec.type === 'category' || hasTests || hasNotes;
+    });
+
+    if (activeSections.length === 0) {
+      suitesCount += 1; // Default suite for empty phase so phase has a suite container
+    } else {
+      suitesCount += activeSections.length;
+    }
+
+    for (const sec of sections) {
+      if (!Array.isArray(sec.tests)) continue;
+      for (const tc of sec.tests) {
+        casesCount += 1;
+        if (tc.completed === true || tc.status === TEST_STATUS.COMPLETED) {
+          completedChecklistItemsCount += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    valid: phasesCount > 0,
+    title: normalized.title,
+    phasesCount,
+    suitesCount,
+    casesCount,
+    completedChecklistItemsCount
+  };
+}
+
+export function findPromotedProjectForChecklist(checklistOrId, projectsArray = null) {
+  const checklist =
+    typeof checklistOrId === 'string'
+      ? getChecklistById(checklistOrId)
+      : checklistOrId;
+  if (!checklist || typeof checklist !== 'object') return null;
+
+  let projects = projectsArray;
+  if (!Array.isArray(projects)) {
+    const readRes = safeStorageRead(PROJECTS_STORAGE_KEY);
+    if (readRes.ok && readRes.value) {
+      try {
+        const parsed = JSON.parse(readRes.value);
+        if (Array.isArray(parsed)) projects = parsed;
+      } catch (_e) {
+        projects = [];
+      }
+    } else {
+      projects = [];
+    }
+  }
+
+  return (
+    projects.find(
+      p =>
+        p &&
+        typeof p === 'object' &&
+        ((checklist.id && p.sourceChecklistId === checklist.id) ||
+          (checklist.promotedProjectId && p.id === checklist.promotedProjectId))
+    ) || null
+  );
+}
+
+export function buildProjectFromChecklist(checklist, options = {}) {
+  const normalized = normalizeChecklistRecord(checklist);
+  if (!normalized || !Array.isArray(normalized.phases) || normalized.phases.length === 0) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const projectId =
+    typeof options.projectId === 'string' && options.projectId.trim()
+      ? options.projectId.trim()
+      : 'proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+  const projectName =
+    typeof options.projectName === 'string' && options.projectName.trim()
+      ? options.projectName.trim()
+      : normalized.title;
+
+  const projectType =
+    typeof options.projectType === 'string' && options.projectType.trim()
+      ? options.projectType.trim()
+      : 'Web Application';
+
+  const docNotesText =
+    Array.isArray(normalized.documentNotes) && normalized.documentNotes.length > 0
+      ? normalized.documentNotes.map(n => n.text).filter(Boolean).join('\n')
+      : '';
+
+  const formalPhases = [];
+  const formalSuites = [];
+  let globalCaseSeq = 1;
+
+  normalized.phases.forEach((ph, pIdx) => {
+    const formalPhaseId = 'ph_' + generateStableId('p');
+    const phaseNumber = Number.isFinite(Number(ph.phaseNumber)) ? Number(ph.phaseNumber) : pIdx + 1;
+    const phaseName = ph.name || `Phase ${phaseNumber}`;
+    const phaseNotesText = [
+      ph.description || '',
+      ...(Array.isArray(ph.notes) ? ph.notes.map(n => n.text).filter(Boolean) : [])
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    formalPhases.push({
+      id: formalPhaseId,
+      phaseNumber,
+      name: phaseName,
+      description: phaseNotesText || `Converted from QA Checklist phase "${phaseName}".`,
+      order: pIdx + 1,
+      sourceChecklistPhaseId: ph.id || null,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    });
+
+    const rawSections = Array.isArray(ph.sections) ? ph.sections : [];
+    const activeSections = rawSections.filter(sec => {
+      const hasTests = Array.isArray(sec.tests) && sec.tests.length > 0;
+      const hasNotes = Array.isArray(sec.notes) && sec.notes.length > 0;
+      return sec.type === 'category' || hasTests || hasNotes;
+    });
+
+    const sectionsToConvert =
+      activeSections.length > 0
+        ? activeSections
+        : [{ id: generateStableId('sec'), type: 'direct', name: `${phaseName} — General Tests`, notes: [], tests: [] }];
+
+    sectionsToConvert.forEach((sec, sIdx) => {
+      const suiteId = 'ts_' + generateStableId('s');
+      const isDirect = sec.type === 'direct' || !sec.name || !String(sec.name).trim();
+      const suiteName = isDirect
+        ? sectionsToConvert.length === 1
+          ? `${phaseName} — General Suite`
+          : `${phaseName} — General Suite ${sIdx + 1}`
+        : String(sec.name).trim();
+      const suiteCategory = isDirect ? 'Functional' : inferFormalSuiteCategory(suiteName);
+      const secNotesText = Array.isArray(sec.notes)
+        ? sec.notes.map(n => n.text).filter(Boolean).join('\n')
+        : '';
+
+      const formalCases = (Array.isArray(sec.tests) ? sec.tests : []).map(tc => {
+        const caseId = 'tc_' + generateStableId('c');
+        const formattedCaseCode = `TC-${String(globalCaseSeq).padStart(3, '0')}`;
+        globalCaseSeq += 1;
+
+        const tags = [];
+        if (tc.testId && String(tc.testId).trim()) {
+          tags.push(String(tc.testId).trim());
+        }
+        if (!isDirect && suiteName) {
+          tags.push(suiteName);
+        }
+
+        // CRITICAL STATUS RULE (QAV-ISS-001):
+        // Checklist completion only indicates a checklist item was checked off in the lightweight runner.
+        // It does NOT represent a formal test execution run with environment, tester, actual result, or pass verdict.
+        // Therefore, BOTH Completed and Incomplete checklist items map to 'Not Run' with empty executions.
+        return {
+          id: caseId,
+          testCaseId: formattedCaseCode,
+          suiteId,
+          title: tc.text && String(tc.text).trim() ? String(tc.text).trim() : 'Untitled Test Case',
+          description: tc.testId
+            ? `Promoted from checklist item [${tc.testId}] in "${normalized.title}".`
+            : `Promoted from checklist "${normalized.title}".`,
+          priority: normalizeFormalCasePriority(tc.priority),
+          category: suiteCategory,
+          tags,
+          preconditions: '',
+          steps: [],
+          expectedResult: '',
+          status: 'Not Run',
+          lastExecutedAt: null,
+          lastExecutionId: null,
+          executions: [],
+          defectIds: [],
+          sourceChecklistTestId: tc.id || null,
+          sourceChecklistCode: tc.testId || null,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+      });
+
+      formalSuites.push({
+        id: suiteId,
+        phaseId: formalPhaseId,
+        name: suiteName,
+        category: suiteCategory,
+        tags: !isDirect ? [suiteName] : [],
+        description: secNotesText || `Test suite converted from "${suiteName}" in ${phaseName}.`,
+        testCases: formalCases,
+        sourceChecklistSectionId: sec.id || null,
+        createdAt: nowIso,
+        updatedAt: nowIso
+      });
+    });
+  });
+
+  const totalCases = globalCaseSeq - 1;
+
+  return {
+    id: projectId,
+    name: projectName,
+    type: projectType,
+    status: 'Active',
+    version: 'v1.0',
+    description:
+      docNotesText ||
+      `Formal QA project promoted from saved QA Checklist "${normalized.title}".`,
+    sourceChecklistId: normalized.id,
+    promotedFromChecklistTitle: normalized.title,
+    promotedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    testPlan: {
+      id: 'tp_' + projectId,
+      name: `${projectName} — Master Test Plan`,
+      objective: `Execute formal verification across ${formalPhases.length} phase(s) and ${totalCases} test case(s) promoted from QA Checklist "${normalized.title}".`,
+      scope: `Covers ${formalPhases.length} testing phase(s) and ${formalSuites.length} test suite(s).`,
+      description: docNotesText || `Test plan generated from QA Checklist "${normalized.title}".`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      phases: formalPhases
+    },
+    testSuites: formalSuites,
+    executions: [],
+    defects: [],
+    testCaseCount: totalCases,
+    executedTests: 0,
+    passedTests: 0,
+    failedTests: 0,
+    blockedTests: 0,
+    skippedTests: 0,
+    notRunTests: totalCases,
+    passRate: 0,
+    totalDefects: 0,
+    openDefects: 0,
+    inProgressDefects: 0,
+    resolvedDefects: 0,
+    closedDefects: 0,
+    criticalDefects: 0
+  };
+}
+
+export function promoteChecklistToProject(checklistId, options = {}) {
+  if (!checklistId || typeof checklistId !== 'string') {
+    return {
+      ok: false,
+      error: 'A valid checklist ID is required for promotion.'
+    };
+  }
+
+  // Capture raw snapshots before any mutation so we can roll back atomically on any failure
+  const rawChecklistsSnap = safeStorageRead(CHECKLISTS_STORAGE_KEY);
+  const rawProjectsSnap = safeStorageRead(PROJECTS_STORAGE_KEY);
+
+  const restorePrePromotionStorage = () => {
+    if (rawProjectsSnap.ok) {
+      if (rawProjectsSnap.value === null) {
+        safeStorageRemove(PROJECTS_STORAGE_KEY);
+      } else {
+        safeStorageWrite(PROJECTS_STORAGE_KEY, rawProjectsSnap.value, 'rolling back project promotion');
+      }
+    }
+    if (rawChecklistsSnap.ok) {
+      if (rawChecklistsSnap.value === null) {
+        safeStorageRemove(CHECKLISTS_STORAGE_KEY);
+      } else {
+        safeStorageWrite(CHECKLISTS_STORAGE_KEY, rawChecklistsSnap.value, 'rolling back checklist promotion link');
+      }
+    }
+  };
+
+  try {
+    const { checklists } = loadAllChecklists();
+    const targetIdx = checklists.findIndex(c => c.id === checklistId);
+    if (targetIdx === -1) {
+      return {
+        ok: false,
+        error: 'The selected QA checklist could not be found in storage.'
+      };
+    }
+
+    const targetChecklist = checklists[targetIdx];
+    if (!Array.isArray(targetChecklist.phases) || targetChecklist.phases.length === 0) {
+      return {
+        ok: false,
+        error: 'Cannot promote an empty checklist with no phases.'
+      };
+    }
+
+    let existingProjects = [];
+    if (rawProjectsSnap.ok && rawProjectsSnap.value) {
+      try {
+        const parsedProjects = JSON.parse(rawProjectsSnap.value);
+        if (!Array.isArray(parsedProjects)) {
+          return {
+            ok: false,
+            error: 'Existing formal projects storage is malformed; promotion aborted to protect workspace data.'
+          };
+        }
+        existingProjects = parsedProjects;
+      } catch (_parseErr) {
+        return {
+          ok: false,
+          error: 'Existing formal projects storage could not be parsed; promotion aborted to protect workspace data.'
+        };
+      }
+    }
+
+    // Prevent accidental duplicate promotions if linked project already exists
+    const alreadyLinkedProject = findPromotedProjectForChecklist(targetChecklist, existingProjects);
+    if (alreadyLinkedProject) {
+      return {
+        ok: false,
+        alreadyPromoted: true,
+        project: alreadyLinkedProject,
+        checklist: targetChecklist,
+        error: `Checklist "${targetChecklist.title}" has already been promoted to project "${alreadyLinkedProject.name}".`
+      };
+    }
+
+    const newProject = buildProjectFromChecklist(targetChecklist, options);
+    if (!newProject) {
+      return {
+        ok: false,
+        error: 'Failed to convert checklist structure into a formal project.'
+      };
+    }
+
+    // Optional failure injection hook for deterministic rollback testing
+    if (typeof options.beforeProjectWrite === 'function') {
+      options.beforeProjectWrite(newProject);
+    }
+
+    // Step 1: Persist formal project to qavora_projects_v1
+    const updatedProjects = [newProject, ...existingProjects];
+    const writeProjRes = safeStorageWrite(
+      PROJECTS_STORAGE_KEY,
+      JSON.stringify(updatedProjects),
+      'saving promoted project'
+    );
+    if (!writeProjRes.ok) {
+      restorePrePromotionStorage();
+      return {
+        ok: false,
+        rolledBack: true,
+        isQuota: writeProjRes.isQuota,
+        isSecurity: writeProjRes.isSecurity,
+        error: writeProjRes.error || 'Failed to save promoted project to storage.'
+      };
+    }
+
+    if (typeof options.afterProjectWriteBeforeChecklistLink === 'function') {
+      options.afterProjectWriteBeforeChecklistLink(newProject);
+    }
+
+    // Step 2: Record promotedProjectId & promotedAt on the checklist WITHOUT modifying title, phases, tests, or completion states
+    const updatedChecklist = {
+      ...targetChecklist,
+      promotedProjectId: newProject.id,
+      promotedAt: newProject.promotedAt
+    };
+    const nextChecklists = [...checklists];
+    nextChecklists[targetIdx] = updatedChecklist;
+
+    const writeChkRes = saveAllChecklists(nextChecklists);
+    if (!writeChkRes.ok) {
+      restorePrePromotionStorage();
+      return {
+        ok: false,
+        rolledBack: true,
+        isQuota: writeChkRes.isQuota,
+        isSecurity: writeChkRes.isSecurity,
+        error: writeChkRes.error || 'Failed to link promoted project to checklist; changes were rolled back.'
+      };
+    }
+
+    const preview = getChecklistPromotionPreview(updatedChecklist);
+
+    return {
+      ok: true,
+      project: newProject,
+      checklist: updatedChecklist,
+      summary: {
+        phasesCount: preview.phasesCount,
+        suitesCount: preview.suitesCount,
+        casesCount: preview.casesCount
+      }
+    };
+  } catch (err) {
+    restorePrePromotionStorage();
+    const isQuota = isQuotaExceededError(err);
+    const isSecurity = isSecurityError(err);
+    return {
+      ok: false,
+      rolledBack: true,
+      isQuota,
+      isSecurity,
+      error: getStorageErrorMessage(err, 'promoting checklist to formal project')
+    };
+  }
+}
+
