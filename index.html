@@ -196,7 +196,7 @@
             </svg>
           </button>
           <div class="page-title-group">
-            <h1 id="page-title" class="page-title">Create a QA Checklist</h1>
+            <h1 id="page-title" class="page-title">Create QA Checklist</h1>
             <span class="page-subtitle" id="page-subtitle">Import &amp; structure manual testing plans</span>
           </div>
         </div>
@@ -2386,10 +2386,10 @@
         <!-- 6. SETTINGS VIEW -->
         <section id="view-settings" class="view-section">
           <!-- Settings Workspace Header -->
-          <div class="workspace-header-bar settings-header-bar">
-            <div>
-              <h2 class="workspace-header-title">Workspace Settings</h2>
-              <p class="workspace-header-subtitle">
+          <div class="section-hero settings-header-bar">
+            <div class="section-hero-text">
+              <h2 class="section-hero-title">Workspace Settings</h2>
+              <p class="section-hero-desc">
                 Configure appearance themes, default testing preferences, and inspect local storage health.
               </p>
             </div>
@@ -2481,8 +2481,8 @@
                       <select id="settings-project-sort-select" class="form-control" aria-label="Default Project Sorting">
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
-                        <option value="name">Alphabetical (A-Z)</option>
-                        <option value="cases">Most Test Cases</option>
+                        <option value="name-asc">Alphabetical (A-Z)</option>
+                        <option value="name-desc">Alphabetical (Z-A)</option>
                       </select>
                       <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -2607,6 +2607,16 @@
 
         <!-- 7. DATA MANAGEMENT & BACKUPS VIEW (Prompt 6) -->
         <section id="view-data" class="view-section">
+          <!-- Data Management Workspace Header -->
+          <div class="section-hero data-header-bar">
+            <div class="section-hero-text">
+              <h2 class="section-hero-title">Data Management &amp; Backups</h2>
+              <p class="section-hero-desc">
+                Export, import, back up, and restore your Qavora projects and QA data with 100% client-side privacy.
+              </p>
+            </div>
+          </div>
+
           <!-- Overview of Stored Data Stats Ribbon -->
           <div class="stats-grid data-stats-grid" style="margin-bottom: 24px;">
             <div class="stat-card">

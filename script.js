@@ -46,7 +46,9 @@ import {
   const STORAGE_KEYS = {
     PROJECTS: 'qavora_projects_v1',
     ACTIVITIES: 'qavora_activities_v1',
-    THEME: 'qavora_theme_preference'
+    THEME: 'qavora_theme_preference',
+    PREFERENCES: 'qavora_preferences_v1',
+    NOTIFICATIONS: 'qavora_notifications_v1'
   };
 
   const LEGACY_STORAGE_KEYS = {
@@ -85,7 +87,7 @@ import {
 
   const VIEW_TITLES = {
     'checklist-generator': {
-      title: 'Create a QA Checklist',
+      title: 'Create QA Checklist',
       subtitle: 'Import & structure manual testing plans'
     },
     'my-checklists': {
@@ -109,7 +111,7 @@ import {
       subtitle: 'Workspace specifications & testing progress'
     },
     plans: {
-      title: 'Test Plans & Suites',
+      title: 'Test Plans',
       subtitle: 'Dynamic test planning, phases, suites, and test cases'
     },
     execution: {
@@ -117,15 +119,15 @@ import {
       subtitle: 'Run manual cycles, verify steps, and log outcomes'
     },
     defects: {
-      title: 'Defect Tracking',
+      title: 'Defects',
       subtitle: 'Manage, prioritize, and resolve QA issues'
     },
     reports: {
-      title: 'Reports & Analytics',
+      title: 'Reports',
       subtitle: 'Execution velocity and QA health metrics'
     },
     data: {
-      title: 'Data Management & Backups',
+      title: 'Data Management',
       subtitle: 'Export, import, back up, and restore your Qavora projects and QA data'
     },
     settings: {
@@ -193,7 +195,16 @@ import {
 
     // Universal Confirmation Dialog State
     pendingConfirm: null, // { type: 'project'|'phase'|'suite'|'case'|'defect', targetId: '', parentId: '', name: '' }
-    lastDeleteFocusedElement: null
+    lastDeleteFocusedElement: null,
+
+    // Phase 5: Workspace Preferences (QAV-ISS-010)
+    preferences: null,
+    _hasCustomSort: false,
+    _settingsSaveTimeout: null,
+
+    // Phase 5: Notifications (QAV-ISS-011)
+    notifications: [],
+    isNotificationPanelOpen: false
   };
 
   // ==========================================================================
@@ -665,6 +676,80 @@ import {
         return safeStorageWrite(STORAGE_KEYS.THEME, theme, 'saving theme');
       } catch (err) {
         console.error('Qavora: Failed to save theme', err);
+      }
+    },
+
+    getPreferences() {
+      const defaultPrefs = {
+        density: 'comfortable',
+        defaultProjectSort: 'newest',
+        defaultCasePriority: 'Medium',
+        autopassSteps: true,
+        actionToasts: true
+      };
+      try {
+        const { raw } = safeStorageRead(STORAGE_KEYS.PREFERENCES);
+        if (!raw) return { ...defaultPrefs };
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return { ...defaultPrefs };
+        }
+        if (!parsed || typeof parsed !== 'object') return { ...defaultPrefs };
+        return {
+          density: parsed.density === 'compact' ? 'compact' : 'comfortable',
+          defaultProjectSort: ['newest', 'oldest', 'name-asc', 'name-desc'].includes(parsed.defaultProjectSort)
+            ? parsed.defaultProjectSort
+            : (parsed.defaultProjectSort === 'name' ? 'name-asc' : (parsed.defaultProjectSort === 'cases' ? 'name-desc' : 'newest')),
+          defaultCasePriority: ['Critical', 'High', 'Medium', 'Low'].includes(parsed.defaultCasePriority)
+            ? parsed.defaultCasePriority
+            : 'Medium',
+          autopassSteps: typeof parsed.autopassSteps === 'boolean' ? parsed.autopassSteps : true,
+          actionToasts: typeof parsed.actionToasts === 'boolean' ? parsed.actionToasts : true
+        };
+      } catch (_err) {
+        return { ...defaultPrefs };
+      }
+    },
+
+    savePreferences(prefs) {
+      try {
+        const current = Storage.getPreferences();
+        const merged = { ...current, ...(prefs || {}) };
+        safeStorageWrite(STORAGE_KEYS.PREFERENCES, JSON.stringify(merged), 'saving preferences');
+        return merged;
+      } catch (err) {
+        console.error('Qavora: Failed to save preferences', err);
+        return Storage.getPreferences();
+      }
+    },
+
+    getNotifications() {
+      try {
+        const { raw } = safeStorageRead(STORAGE_KEYS.NOTIFICATIONS);
+        if (!raw) return [];
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return [];
+        }
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.title === 'string');
+      } catch (_err) {
+        return [];
+      }
+    },
+
+    saveNotifications(notifications) {
+      try {
+        const safeList = Array.isArray(notifications) ? notifications.slice(0, 50) : [];
+        safeStorageWrite(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(safeList), 'saving notifications');
+        return safeList;
+      } catch (err) {
+        console.error('Qavora: Failed to save notifications', err);
+        return [];
       }
     }
   };
@@ -1193,6 +1278,32 @@ import {
     btnTriggerResetModal: document.getElementById('btn-trigger-reset-modal'),
     settingsJumpDataBtn: document.getElementById('settings-jump-data-btn'),
 
+    // Phase 5: Settings Elements (QAV-ISS-010)
+    settingsSaveIndicator: document.getElementById('settings-save-indicator'),
+    settingsThemeSelect: document.getElementById('settings-theme-select'),
+    settingsDensitySelect: document.getElementById('settings-density-select'),
+    settingsProjectSortSelect: document.getElementById('settings-project-sort-select'),
+    settingsCasePrioritySelect: document.getElementById('settings-case-priority-select'),
+    settingsAutopassStepsToggle: document.getElementById('settings-autopass-steps-toggle'),
+    settingsActionToastsToggle: document.getElementById('settings-action-toasts-toggle'),
+    settingsStorageUsed: document.getElementById('settings-storage-used'),
+    settingsStoragePercent: document.getElementById('settings-storage-percent'),
+    settingsCountProjects: document.getElementById('settings-count-projects'),
+    settingsCountChecklists: document.getElementById('settings-count-checklists'),
+    settingsCountCases: document.getElementById('settings-count-cases'),
+    settingsQuickBackupBtn: document.getElementById('settings-quick-backup-btn'),
+
+    // Phase 5: Notifications Elements (QAV-ISS-011)
+    notificationWrapper: document.getElementById('notification-wrapper'),
+    notificationBtn: document.getElementById('notification-btn'),
+    notificationIndicator: document.getElementById('notification-indicator'),
+    notificationCountBadge: document.getElementById('notification-count-badge'),
+    notificationPanel: document.getElementById('notification-panel'),
+    notificationUnreadCount: document.getElementById('notification-unread-count'),
+    notificationMarkAllBtn: document.getElementById('notification-mark-all-btn'),
+    notificationClearAllBtn: document.getElementById('notification-clear-all-btn'),
+    notificationList: document.getElementById('notification-list'),
+
     // Import Preview Modal
     importPreviewModal: document.getElementById('import-preview-modal'),
     importPreviewClose: document.getElementById('import-preview-close'),
@@ -1390,6 +1501,9 @@ import {
 
   function showToast(message, type = 'success') {
     if (!DOM.toastContainer) return;
+    if (State.preferences && State.preferences.actionToasts === false && type !== 'error' && type !== 'warning') {
+      return;
+    }
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
@@ -1646,6 +1760,11 @@ import {
   // ==========================================================================
   function renderMyProjects() {
     const projects = Storage.getProjects();
+
+    if (!State._hasCustomSort && State.preferences?.defaultProjectSort) {
+      State.sortBy = State.preferences.defaultProjectSort;
+      if (DOM.projectSortBy) DOM.projectSortBy.value = State.preferences.defaultProjectSort;
+    }
 
     const totalCount = projects.length;
     const activeCount = projects.filter(p => p.status === 'Active').length;
@@ -1907,12 +2026,14 @@ import {
     State.searchQuery = '';
     State.typeFilter = 'ALL';
     State.statusFilter = 'ALL';
-    State.sortBy = 'newest';
+    const defaultSort = State.preferences?.defaultProjectSort || 'newest';
+    State.sortBy = defaultSort;
+    State._hasCustomSort = false;
 
     if (DOM.projectSearchInput) DOM.projectSearchInput.value = '';
     if (DOM.projectFilterType) DOM.projectFilterType.value = 'ALL';
     if (DOM.projectFilterStatus) DOM.projectFilterStatus.value = 'ALL';
-    if (DOM.projectSortBy) DOM.projectSortBy.value = 'newest';
+    if (DOM.projectSortBy) DOM.projectSortBy.value = defaultSort;
     if (DOM.topQuickSearch) DOM.topQuickSearch.value = '';
 
     renderMyProjects();
@@ -3269,7 +3390,7 @@ import {
       if (DOM.caseModalSubmitText) DOM.caseModalSubmitText.textContent = 'Save Changes';
     } else {
       if (DOM.caseIdInput) DOM.caseIdInput.value = '';
-      if (DOM.casePrioritySelect) DOM.casePrioritySelect.value = 'High';
+      if (DOM.casePrioritySelect) DOM.casePrioritySelect.value = State.preferences?.defaultCasePriority || 'Medium';
       if (DOM.caseCategoryInput) DOM.caseCategoryInput.value = suite.category || 'Functional';
 
       // Default to one empty step
@@ -4451,6 +4572,19 @@ import {
         if (DOM.execActualLabel) DOM.execActualLabel.innerHTML = 'Actual Result <span class="required-mark">*</span>';
         if (DOM.execActualHint) DOM.execActualHint.textContent = 'Describe the confirmed outcome matching the expected specification (Required for Pass).';
         if (DOM.execActualInput) DOM.execActualInput.placeholder = 'e.g. Operation completed successfully as expected; UI transitioned to confirmation state.';
+
+        if (State.preferences?.autopassSteps && State.modalExecContext && Array.isArray(State.modalExecContext.steps)) {
+          let updated = false;
+          State.modalExecContext.steps.forEach(st => {
+            if (st && st.status === 'untested') {
+              st.status = 'completed';
+              updated = true;
+            }
+          });
+          if (updated) {
+            renderExecutionStepsList();
+          }
+        }
       } else if (val === 'Blocked') {
         if (DOM.execActualLabel) DOM.execActualLabel.innerHTML = 'Blocking Reason & Obstacle <span class="required-mark">*</span>';
         if (DOM.execActualHint) DOM.execActualHint.textContent = 'State the external dependency, unavailable environment, or open bug blocking execution (Required).';
@@ -4632,6 +4766,12 @@ import {
 
     const defectText = defectId ? ` (Logged ${defectId})` : '';
     Storage.addActivity('Executed test case', `${targetCase.id} [${status}]${defectText}`);
+    addNotification({
+      title: `Test ${status}: ${targetCase.id}`,
+      message: `Execution recorded as ${status} in "${project.name}".`,
+      type: 'execution',
+      link: { view: 'execution', projectId: project.id, caseId: targetCase.id }
+    });
     showToast(`Execution recorded: ${targetCase.id} (${status})`, 'success');
 
     closeExecutionModal();
@@ -5456,6 +5596,12 @@ import {
       }
 
       Storage.addActivity('Created defect', `${newId}: ${title}`);
+      addNotification({
+        title: `Defect Logged: ${newId}`,
+        message: `"${title}" logged with ${severity} severity in "${targetProject.name}".`,
+        type: 'defect',
+        link: { view: 'defects', projectId: targetProject.id, defectId: newId }
+      });
       showToast(`Defect ${newId} logged!`, 'success');
       closeDefectModal();
     }
@@ -6115,6 +6261,12 @@ import {
       }
 
       Storage.addActivity('Created new project', name);
+      addNotification({
+        title: 'Project Created',
+        message: `Project "${name}" was successfully initialized.`,
+        type: 'project',
+        link: { view: 'project-details', projectId: newId }
+      });
       showToast(`Project "${name}" created!`, 'success');
       closeProjectModal();
     }
@@ -7744,6 +7896,12 @@ import {
     downloadFile(jsonStr, filename, 'application/json');
     const summaryLabel = `${projects.length} Projects, ${qaChecklists.length} QA Checklists`;
     Storage.addActivity('Created Full Backup', summaryLabel);
+    addNotification({
+      title: 'Full Backup Created',
+      message: `Application backup downloaded (${summaryLabel}).`,
+      type: 'backup',
+      link: { view: 'data' }
+    });
     showToast(`Complete application backup downloaded (${projects.length} projects, ${qaChecklists.length} QA checklists)`);
   }
 
@@ -8905,6 +9063,12 @@ import {
       const toastSuccessMsg = strategy === 'replace'
         ? `Restored ${applyRes.importedCount} QA Checklist(s) from transfer code. Pre-restore rollback snapshot saved.`
         : `Merged ${applyRes.importedCount} QA Checklist(s) into workspace.`;
+      addNotification({
+        title: 'Checklists Imported',
+        message: toastSuccessMsg,
+        type: 'import',
+        link: { view: 'data' }
+      });
       showToast(toastSuccessMsg, 'success');
       renderDashboard();
       renderDataWorkspace();
@@ -8994,6 +9158,12 @@ import {
           qaRunnerController.refreshGlobalBadgesAndBanners();
         }
       }
+      addNotification({
+        title: 'Backup Restored',
+        message: `Restored ${actDetail}. Pre-restore rollback snapshot saved.`,
+        type: 'import',
+        link: { view: 'data' }
+      });
       showToast(`Restored ${actDetail}. Pre-restore rollback snapshot saved.`, 'success');
       renderDashboard();
       renderDataWorkspace();
@@ -9077,6 +9247,12 @@ import {
           qaRunnerController.refreshGlobalBadgesAndBanners();
         }
       }
+      addNotification({
+        title: 'Data Merged',
+        message: `Merged ${mergeSummary} into workspace.`,
+        type: 'import',
+        link: { view: 'data' }
+      });
       showToast(`Merged ${mergeSummary} into workspace.`, 'success');
       renderDashboard();
       renderDataWorkspace();
@@ -9270,6 +9446,8 @@ import {
         qaRunnerController.recordLastQaView('qa-runner');
         qaRunnerController.renderRunnerView();
       }
+    } else if (viewName === 'settings') {
+      renderSettingsWorkspace();
     }
   }
 
@@ -9288,12 +9466,388 @@ import {
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     Storage.saveTheme(theme);
+    if (DOM.settingsThemeSelect) {
+      DOM.settingsThemeSelect.value = theme;
+    }
   }
 
   function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
     applyTheme(next);
+  }
+
+  // ==========================================================================
+  // Phase 5: Workspace Settings Controller (QAV-ISS-010)
+  // ==========================================================================
+  function applyPreferences(prefs, showIndicator = false) {
+    const cleanPrefs = Storage.savePreferences(prefs);
+    State.preferences = cleanPrefs;
+
+    if (cleanPrefs.density) {
+      document.documentElement.setAttribute('data-density', cleanPrefs.density);
+    }
+
+    if (showIndicator && DOM.settingsSaveIndicator) {
+      DOM.settingsSaveIndicator.style.display = 'inline-flex';
+      DOM.settingsSaveIndicator.style.opacity = '1';
+      clearTimeout(State._settingsSaveTimeout);
+      State._settingsSaveTimeout = setTimeout(() => {
+        if (DOM.settingsSaveIndicator) {
+          DOM.settingsSaveIndicator.style.opacity = '0';
+          setTimeout(() => {
+            if (DOM.settingsSaveIndicator) DOM.settingsSaveIndicator.style.display = 'none';
+          }, 300);
+        }
+      }, 2000);
+    }
+
+    return cleanPrefs;
+  }
+
+  function renderSettingsWorkspace() {
+    if (!State.preferences) {
+      State.preferences = Storage.getPreferences();
+    }
+    const prefs = State.preferences;
+
+    // 1. Controls reflection
+    if (DOM.settingsThemeSelect) {
+      DOM.settingsThemeSelect.value = Storage.getTheme();
+    }
+    if (DOM.settingsDensitySelect) {
+      DOM.settingsDensitySelect.value = prefs.density || 'comfortable';
+    }
+    if (DOM.settingsProjectSortSelect) {
+      DOM.settingsProjectSortSelect.value = prefs.defaultProjectSort || 'newest';
+    }
+    if (DOM.settingsCasePrioritySelect) {
+      DOM.settingsCasePrioritySelect.value = prefs.defaultCasePriority || 'Medium';
+    }
+    if (DOM.settingsAutopassStepsToggle) {
+      DOM.settingsAutopassStepsToggle.checked = Boolean(prefs.autopassSteps);
+    }
+    if (DOM.settingsActionToastsToggle) {
+      DOM.settingsActionToastsToggle.checked = Boolean(prefs.actionToasts);
+    }
+
+    // 2. Storage Health Overview
+    const footprint = calculateQavoraStorageFootprint();
+    if (DOM.settingsStorageUsed) {
+      DOM.settingsStorageUsed.textContent = footprint.formattedKB;
+    }
+    if (DOM.settingsStoragePercent) {
+      DOM.settingsStoragePercent.textContent = footprint.totalBytes === 0
+        ? '0% used of ~5 MB'
+        : `${footprint.clampedPercent.toFixed(1)}% of ~5 MB est. quota`;
+    }
+    const projects = Storage.getProjects();
+    if (DOM.settingsCountProjects) {
+      DOM.settingsCountProjects.textContent = String(projects.length);
+    }
+    const chkListRes = loadAllChecklists();
+    const chkCount = Array.isArray(chkListRes?.checklists) ? chkListRes.checklists.length : 0;
+    if (DOM.settingsCountChecklists) {
+      DOM.settingsCountChecklists.textContent = String(chkCount);
+    }
+    let totalCases = 0;
+    projects.forEach(p => {
+      if (Array.isArray(p.testSuites)) {
+        p.testSuites.forEach(s => {
+          if (Array.isArray(s.testCases)) totalCases += s.testCases.length;
+        });
+      }
+    });
+    if (DOM.settingsCountCases) {
+      DOM.settingsCountCases.textContent = String(totalCases);
+    }
+  }
+
+  // ==========================================================================
+  // Phase 5: Notification System Controller (QAV-ISS-011)
+  // ==========================================================================
+  function formatRelativeTime(isoString) {
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+      if (diffSec < 45) return 'Just now';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function getNotificationIconSvg(type) {
+    switch (type) {
+      case 'project':
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+      case 'execution':
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+      case 'defect':
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+      case 'promotion':
+      case 'checklist':
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      case 'backup':
+      case 'import':
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+      default:
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`;
+    }
+  }
+
+  function getNotificationIconClass(type) {
+    switch (type) {
+      case 'project': return 'icon-blue';
+      case 'execution': return 'icon-purple';
+      case 'defect': return 'icon-red';
+      case 'promotion':
+      case 'checklist': return 'icon-green';
+      case 'backup':
+      case 'import': return 'icon-blue';
+      default: return 'icon-purple';
+    }
+  }
+
+  function addNotification({ title, message, type = 'system', link = null }) {
+    if (!title || !message) return;
+    const notifications = Storage.getNotifications();
+    const now = new Date().toISOString();
+
+    // Deduplication check: prevent identical notification within 2 seconds
+    const isDuplicate = notifications.length > 0 &&
+      notifications[0].title === title &&
+      notifications[0].message === message &&
+      notifications[0].type === type &&
+      (Date.now() - new Date(notifications[0].timestamp).getTime() < 2000);
+
+    if (isDuplicate) return;
+
+    const newNotif = {
+      id: 'notif_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      title: String(title),
+      message: String(message),
+      type: String(type),
+      timestamp: now,
+      read: false,
+      link: link && typeof link === 'object' ? link : null
+    };
+
+    notifications.unshift(newNotif);
+    const saved = Storage.saveNotifications(notifications);
+    State.notifications = saved;
+    updateNotificationUI();
+  }
+
+  function markNotificationAsRead(id) {
+    const list = Storage.getNotifications();
+    const target = list.find(n => n.id === id);
+    if (target) {
+      target.read = true;
+      State.notifications = Storage.saveNotifications(list);
+      updateNotificationUI();
+    }
+  }
+
+  function markAllNotificationsAsRead() {
+    const list = Storage.getNotifications();
+    let hasChanges = false;
+    list.forEach(n => {
+      if (!n.read) {
+        n.read = true;
+        hasChanges = true;
+      }
+    });
+    if (hasChanges) {
+      State.notifications = Storage.saveNotifications(list);
+      updateNotificationUI();
+    }
+  }
+
+  function clearAllNotifications() {
+    State.notifications = Storage.saveNotifications([]);
+    updateNotificationUI();
+  }
+
+  function dismissNotification(id) {
+    const list = Storage.getNotifications();
+    const filtered = list.filter(n => n.id !== id);
+    State.notifications = Storage.saveNotifications(filtered);
+    updateNotificationUI();
+  }
+
+  function toggleNotificationPanel(forceState) {
+    if (!DOM.notificationPanel) return;
+    const shouldOpen = typeof forceState === 'boolean'
+      ? forceState
+      : DOM.notificationPanel.style.display === 'none';
+
+    if (shouldOpen) {
+      DOM.notificationPanel.style.display = 'flex';
+      if (DOM.notificationBtn) DOM.notificationBtn.setAttribute('aria-expanded', 'true');
+      State.isNotificationPanelOpen = true;
+      updateNotificationUI();
+    } else {
+      DOM.notificationPanel.style.display = 'none';
+      if (DOM.notificationBtn) DOM.notificationBtn.setAttribute('aria-expanded', 'false');
+      State.isNotificationPanelOpen = false;
+    }
+  }
+
+  function handleNotificationNavigation(link) {
+    if (!link || typeof link !== 'object') return;
+    toggleNotificationPanel(false);
+
+    const { view, projectId } = link;
+    if (view === 'project-details') {
+      const projects = Storage.getProjects();
+      const proj = projects.find(p => p.id === projectId);
+      if (proj) {
+        openProjectDetails(projectId);
+      } else {
+        showToast('Referenced project is no longer available.', 'warning');
+      }
+    } else if (view === 'execution') {
+      const projects = Storage.getProjects();
+      if (projectId && projects.some(p => p.id === projectId)) {
+        switchView('execution', projectId);
+      } else {
+        switchView('execution');
+      }
+    } else if (view === 'defects') {
+      const projects = Storage.getProjects();
+      if (projectId && projects.some(p => p.id === projectId)) {
+        switchView('defects', projectId);
+      } else {
+        switchView('defects');
+      }
+    } else if (view === 'plans') {
+      const projects = Storage.getProjects();
+      if (projectId && projects.some(p => p.id === projectId)) {
+        switchView('plans', projectId);
+      } else {
+        switchView('plans');
+      }
+    } else if (view === 'my-checklists') {
+      switchView('my-checklists');
+    } else if (view === 'data') {
+      switchView('data');
+    } else if (view === 'settings') {
+      switchView('settings');
+    } else if (view) {
+      switchView(view);
+    }
+  }
+
+  function updateNotificationUI() {
+    const notifications = State.notifications || Storage.getNotifications();
+    State.notifications = notifications;
+
+    const unreadCount = notifications.filter(n => !n.read).length;
+
+    if (DOM.notificationCountBadge) {
+      if (unreadCount > 0) {
+        DOM.notificationCountBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+        DOM.notificationCountBadge.style.display = 'flex';
+      } else {
+        DOM.notificationCountBadge.style.display = 'none';
+      }
+    }
+
+    if (DOM.notificationIndicator) {
+      DOM.notificationIndicator.style.display = unreadCount > 0 ? 'block' : 'none';
+    }
+
+    if (DOM.notificationUnreadCount) {
+      if (unreadCount > 0) {
+        DOM.notificationUnreadCount.textContent = `${unreadCount} new`;
+        DOM.notificationUnreadCount.style.display = 'inline-block';
+      } else {
+        DOM.notificationUnreadCount.style.display = 'none';
+      }
+    }
+
+    if (!DOM.notificationList) return;
+
+    if (notifications.length === 0) {
+      DOM.notificationList.innerHTML = `
+        <div class="notification-empty-state">
+          <div class="notification-empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
+          <div class="notification-empty-title">No notifications</div>
+          <div class="notification-empty-text">You're all caught up with your QA testing updates.</div>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    notifications.forEach(item => {
+      const iconClass = getNotificationIconClass(item.type);
+      const iconSvg = getNotificationIconSvg(item.type);
+      const timeStr = formatRelativeTime(item.timestamp);
+      const unreadClass = item.read ? '' : 'unread';
+      const typeLabel = (item.type || 'system').toUpperCase();
+
+      html += `
+        <div class="notification-item ${unreadClass}" data-id="${escapeHTML(item.id)}" role="article">
+          <div class="notification-item-icon ${iconClass}">
+            ${iconSvg}
+          </div>
+          <div class="notification-item-body">
+            <div class="notification-item-header">
+              <span class="notification-item-title">${escapeHTML(item.title)}</span>
+              <span class="notification-item-time">${escapeHTML(timeStr)}</span>
+            </div>
+            <div class="notification-item-msg">${escapeHTML(item.message)}</div>
+            <div class="notification-item-actions">
+              <span class="notification-item-badge">${escapeHTML(typeLabel)}</span>
+              <button type="button" class="notification-item-dismiss" data-dismiss-id="${escapeHTML(item.id)}" title="Dismiss notification" aria-label="Dismiss">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    DOM.notificationList.innerHTML = html;
+
+    // Attach click handlers to items and dismiss buttons
+    DOM.notificationList.querySelectorAll('.notification-item').forEach(el => {
+      const id = el.getAttribute('data-id');
+      const item = notifications.find(n => n.id === id);
+
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.notification-item-dismiss')) return;
+        if (item) {
+          markNotificationAsRead(item.id);
+          if (item.link) {
+            handleNotificationNavigation(item.link);
+          }
+        }
+      });
+    });
+
+    DOM.notificationList.querySelectorAll('.notification-item-dismiss').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-dismiss-id');
+        if (id) dismissNotification(id);
+      });
+    });
   }
 
   // ==========================================================================
@@ -9358,6 +9912,7 @@ import {
     if (DOM.projectSortBy) {
       DOM.projectSortBy.addEventListener('change', (e) => {
         State.sortBy = e.target.value;
+        State._hasCustomSort = true;
         renderMyProjects();
       });
     }
@@ -10113,11 +10668,110 @@ import {
       DOM.resetModalConfirmBtn.addEventListener('click', executeWorkspaceReset);
     }
 
+    // 13. Workspace Settings Controls (QAV-ISS-010)
     if (DOM.settingsJumpDataBtn) {
       DOM.settingsJumpDataBtn.addEventListener('click', () => {
         switchView('data');
       });
     }
+
+    if (DOM.settingsQuickBackupBtn) {
+      DOM.settingsQuickBackupBtn.addEventListener('click', () => {
+        exportFullApplicationBackup();
+      });
+    }
+
+    if (DOM.settingsThemeSelect) {
+      DOM.settingsThemeSelect.addEventListener('change', (e) => {
+        applyTheme(e.target.value);
+        if (DOM.settingsSaveIndicator) {
+          DOM.settingsSaveIndicator.style.display = 'inline-flex';
+          DOM.settingsSaveIndicator.style.opacity = '1';
+          clearTimeout(State._settingsSaveTimeout);
+          State._settingsSaveTimeout = setTimeout(() => {
+            if (DOM.settingsSaveIndicator) {
+              DOM.settingsSaveIndicator.style.opacity = '0';
+              setTimeout(() => {
+                if (DOM.settingsSaveIndicator) DOM.settingsSaveIndicator.style.display = 'none';
+              }, 300);
+            }
+          }, 2000);
+        }
+      });
+    }
+
+    if (DOM.settingsDensitySelect) {
+      DOM.settingsDensitySelect.addEventListener('change', (e) => {
+        applyPreferences({ density: e.target.value }, true);
+      });
+    }
+
+    if (DOM.settingsProjectSortSelect) {
+      DOM.settingsProjectSortSelect.addEventListener('change', (e) => {
+        applyPreferences({ defaultProjectSort: e.target.value }, true);
+        if (!State._hasCustomSort) {
+          State.sortBy = e.target.value;
+          if (DOM.projectSortBy) DOM.projectSortBy.value = e.target.value;
+        }
+      });
+    }
+
+    if (DOM.settingsCasePrioritySelect) {
+      DOM.settingsCasePrioritySelect.addEventListener('change', (e) => {
+        applyPreferences({ defaultCasePriority: e.target.value }, true);
+      });
+    }
+
+    if (DOM.settingsAutopassStepsToggle) {
+      DOM.settingsAutopassStepsToggle.addEventListener('change', (e) => {
+        applyPreferences({ autopassSteps: e.target.checked }, true);
+      });
+    }
+
+    if (DOM.settingsActionToastsToggle) {
+      DOM.settingsActionToastsToggle.addEventListener('change', (e) => {
+        applyPreferences({ actionToasts: e.target.checked }, true);
+      });
+    }
+
+    // 14. Notifications Controls (QAV-ISS-011)
+    if (DOM.notificationBtn) {
+      DOM.notificationBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleNotificationPanel();
+      });
+    }
+
+    if (DOM.notificationMarkAllBtn) {
+      DOM.notificationMarkAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        markAllNotificationsAsRead();
+      });
+    }
+
+    if (DOM.notificationClearAllBtn) {
+      DOM.notificationClearAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearAllNotifications();
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (DOM.notificationPanel && DOM.notificationPanel.style.display !== 'none') {
+        if (!DOM.notificationWrapper || !DOM.notificationWrapper.contains(e.target)) {
+          toggleNotificationPanel(false);
+        }
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (DOM.notificationPanel && DOM.notificationPanel.style.display !== 'none') {
+          toggleNotificationPanel(false);
+          if (DOM.notificationBtn) DOM.notificationBtn.focus();
+        }
+      }
+    });
 
     if (DOM.sidebarToggleBtn) DOM.sidebarToggleBtn.addEventListener('click', openMobileSidebar);
     if (DOM.sidebarCloseBtn) DOM.sidebarCloseBtn.addEventListener('click', closeMobileSidebar);
@@ -10132,7 +10786,15 @@ import {
     const savedTheme = Storage.getTheme();
     applyTheme(savedTheme);
 
+    State.preferences = Storage.getPreferences();
+    if (State.preferences && State.preferences.density) {
+      document.documentElement.setAttribute('data-density', State.preferences.density);
+    }
+    State.notifications = Storage.getNotifications();
+
     bindEvents();
+    updateNotificationUI();
+
     qaRunnerController = initQARunnerAndChecklists({
       navigateTo: (targetView, optArg) => switchView(targetView, optArg),
       notify: showToast,
@@ -10141,6 +10803,12 @@ import {
           'Promoted Checklist to Project',
           `${checklist.title} → ${project.name} (${summary.casesCount} cases)`
         );
+        addNotification({
+          title: 'Checklist Promoted',
+          message: `Checklist "${checklist.title}" promoted to project "${project.name}".`,
+          type: 'promotion',
+          link: { view: 'project-details', projectId: project.id }
+        });
         renderDashboard();
         renderMyProjects();
         renderTestPlansWorkspace();
@@ -10196,6 +10864,27 @@ import {
     const restoredQaView = qaRunnerController.getRestoredInitialView();
     if (restoredQaView) {
       switchView(restoredQaView);
+    }
+
+    if (typeof globalThis !== 'undefined') {
+      globalThis.__qavoraApp = {
+        State,
+        DOM,
+        Storage,
+        applyTheme,
+        toggleTheme,
+        applyPreferences,
+        renderSettingsWorkspace,
+        addNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearAllNotifications,
+        dismissNotification,
+        toggleNotificationPanel,
+        handleNotificationNavigation,
+        updateNotificationUI,
+        switchView
+      };
     }
   }
 

@@ -4621,7 +4621,7 @@ body.mobile-nav-open {
   }
 
   .top-nav-right .notification-btn {
-    display: none;
+    display: inline-flex;
   }
 
   .page-title {
@@ -8603,5 +8603,483 @@ body.mobile-nav-open {
   .transfer-success-body .btn {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* ==========================================================================
+   Phase 5: Workspace Settings Styles (QAV-ISS-010)
+   ========================================================================== */
+.settings-header-bar {
+  margin-bottom: 24px;
+}
+
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-green, #10b981);
+  background-color: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  transition: opacity 0.3s ease;
+}
+
+.settings-cards-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1000px;
+}
+
+.settings-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+}
+
+.settings-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.settings-card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 2px 0;
+}
+
+.settings-card-desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.settings-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-field-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.settings-field-group:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settings-field-info {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.settings-field-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+  cursor: pointer;
+}
+
+.settings-field-help {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.settings-field-control {
+  flex: 0 0 auto;
+  width: 240px;
+  max-width: 100%;
+}
+
+.settings-storage-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.settings-mini-stat {
+  background-color: var(--bg-card, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-mini-stat-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-mini-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-mini-stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.settings-storage-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+}
+
+/* Density Preferences (QAV-ISS-010) */
+[data-density="compact"] .cases-table th,
+[data-density="compact"] .cases-table td {
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+}
+
+[data-density="compact"] .defect-item,
+[data-density="compact"] .exec-card {
+  padding: 10px 14px;
+}
+
+[data-density="compact"] .view-steps-table td {
+  padding: 6px 8px;
+}
+
+/* ==========================================================================
+   Phase 5: Notification System Styles (QAV-ISS-011)
+   ========================================================================== */
+.notification-wrapper {
+  position: relative;
+}
+
+.notification-count-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  background-color: var(--color-red, #ef4444);
+  color: #ffffff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  min-width: 17px;
+  height: 17px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  border: 2px solid var(--bg-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.notification-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 380px;
+  max-width: calc(100vw - 20px);
+  max-height: 520px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  z-index: 1050;
+  overflow: hidden;
+}
+
+.notification-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+}
+
+.notification-panel-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notification-panel-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.notification-unread-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-primary, #6366f1);
+  background-color: rgba(99, 102, 241, 0.12);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+}
+
+.notification-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-action-link {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: color 0.15s ease;
+}
+
+.notification-action-link:hover {
+  color: var(--accent-primary, #6366f1);
+}
+
+.notification-list {
+  overflow-y: auto;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.notification-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.notification-empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background-color: var(--bg-input, rgba(255, 255, 255, 0.04));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+}
+
+.notification-empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.notification-empty-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.notification-empty-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 240px;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.04));
+  transition: background-color 0.15s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item:hover {
+  background-color: var(--bg-surface-hover, rgba(255, 255, 255, 0.03));
+}
+
+.notification-item.unread {
+  background-color: rgba(99, 102, 241, 0.06);
+}
+
+.notification-item.unread:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+.notification-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notification-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.notification-item-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notification-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.notification-item-title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-item-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.notification-item-msg {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.notification-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.notification-item-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.notification-item-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.notification-item-dismiss:hover {
+  opacity: 1;
+  color: var(--color-red, #ef4444);
+}
+
+.notification-item-dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 768px) {
+  .settings-storage-stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-field-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .settings-field-control {
+    width: 100%;
+  }
+  .notification-panel {
+    position: fixed;
+    top: 54px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    max-height: 80vh;
   }
 }
